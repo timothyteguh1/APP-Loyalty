@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../controllers/auth_controller.dart';
 import '../../widgets/custom_text_field.dart';
+// [PENTING] Import halaman Home agar bisa dipanggil langsung
+import '../home/home_page.dart'; 
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -73,39 +75,46 @@ class _RegisterPageState extends State<RegisterPage> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
                   ),
                   onPressed: _isLoading ? null : () async {
-                    // 1. Validasi Input Kosong
+                    // Validasi Input
                     if (_emailController.text.isEmpty || _nameController.text.isEmpty || _selectedDomisili == null) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Semua data wajib diisi!")));
                       return;
                     }
 
-                    // 2. Validasi Password
                     if (_passwordController.text != _confirmPasswordController.text) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Password tidak cocok!")));
+                      return;
+                    }
+                    
+                    // Supabase butuh password minimal 6 karakter
+                    if (_passwordController.text.length < 6) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Password minimal 6 karakter!")));
                       return;
                     }
 
                     setState(() => _isLoading = true);
 
                     try {
-                      // 3. Panggil Controller
                       await _authController.signUp(
                         email: _emailController.text.trim(),
                         password: _passwordController.text.trim(),
                         name: _nameController.text.trim(),
-                        domisili: _selectedDomisili!, // Kirim domisili yang dipilih
+                        domisili: _selectedDomisili!, 
                       );
                       
-                      // --- [ANTI CRASH] Cek apakah layar masih aktif ---
                       if (!mounted) return;
 
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text("Berhasil Daftar! Masuk ke Home..."), backgroundColor: Colors.green),
                       );
 
-                      // --- [ANTI CRASH] Paksa pindah ke Home & Hapus histori Login/Register ---
-                      // Ini mencegah bentrok dengan Auto-Login Listener
-                      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+                      // [PERBAIKAN ERROR MERAH]
+                      // Menggunakan MaterialPageRoute agar TIDAK PERLU setting routes di main.dart
+                      Navigator.pushAndRemoveUntil(
+                        context, 
+                        MaterialPageRoute(builder: (context) => const HomePage()), 
+                        (route) => false
+                      );
 
                     } catch (e) {
                       if (mounted) {

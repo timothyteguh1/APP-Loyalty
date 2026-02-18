@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // Import ini wajib
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../controllers/auth_controller.dart';
-import 'edit_profile_page.dart'; 
+import 'edit_profile_page.dart';
+import 'help_center_page.dart'; // [PENTING] Import Halaman Baru
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
@@ -11,9 +12,9 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-  // Fungsi Refresh Tampilan
+  
   void _refreshData() {
-    setState(() {}); // "Bangunkan" halaman agar membaca data ulang
+    setState(() {}); 
   }
 
   Future<void> _confirmLogout() async {
@@ -37,15 +38,10 @@ class _AccountPageState extends State<AccountPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 1. AMBIL DATA USER TERBARU DARI SUPABASE
+    // 1. AMBIL DATA USER
     final user = Supabase.instance.client.auth.currentUser;
-    
-    // Ambil Nama & Email
     final String name = user?.userMetadata?['full_name'] ?? 'User Upsol';
     final String email = user?.email ?? '-';
-    
-    // 2. AMBIL FOTO (LOGIKA BARU)
-    // Cek apakah ada 'avatar_url' di metadata? Kalau tidak, pakai gambar default.
     final String? avatarUrl = user?.userMetadata?['avatar_url'];
     final bool hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
 
@@ -55,7 +51,7 @@ class _AccountPageState extends State<AccountPage> {
         physics: const AlwaysScrollableScrollPhysics(),
         child: Stack(
           children: [
-            // Header Merah
+            // HEADER MERAH
             Positioned(
               top: 0, left: 0, right: 0, height: 220,
               child: Container(
@@ -69,10 +65,12 @@ class _AccountPageState extends State<AccountPage> {
               ),
             ),
 
-            // Konten Utama
+            // KONTEN UTAMA
             Column(
               children: [
                 const SizedBox(height: 90), 
+                
+                // KARTU PROFIL
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 24),
                   padding: const EdgeInsets.all(20),
@@ -87,14 +85,12 @@ class _AccountPageState extends State<AccountPage> {
                     children: [
                       Row(
                         children: [
-                          // [FOTO PROFIL YANG SUDAH DIPERBAIKI]
                           CircleAvatar(
                             radius: 30,
                             backgroundColor: Colors.grey[200],
                             backgroundImage: hasAvatar
-                                ? NetworkImage(avatarUrl!) // Pakai foto upload-an user
-                                : const NetworkImage('https://i.pravatar.cc/150?img=12'), // Default
-                            // Anti-Crash kalau URL error
+                                ? NetworkImage(avatarUrl!)
+                                : const NetworkImage('https://i.pravatar.cc/150?img=12'),
                             onBackgroundImageError: (_, __) {},
                           ),
                           const SizedBox(width: 16),
@@ -115,15 +111,10 @@ class _AccountPageState extends State<AccountPage> {
                           Expanded(
                             child: ElevatedButton(
                               onPressed: () async {
-                                // Tunggu hasil edit
                                 final bool? updated = await Navigator.of(context, rootNavigator: true).push(
                                   MaterialPageRoute(builder: (_) => const EditProfilePage())
                                 );
-
-                                // Kalau ada perubahan (updated == true), refresh halaman ini
-                                if (updated == true) {
-                                  _refreshData();
-                                }
+                                if (updated == true) _refreshData();
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFD32F2F),
@@ -148,7 +139,8 @@ class _AccountPageState extends State<AccountPage> {
                 ),
                 
                 const SizedBox(height: 30),
-                // Menu List
+                
+                // MENU LIST
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 24),
                   padding: const EdgeInsets.all(16),
@@ -157,7 +149,14 @@ class _AccountPageState extends State<AccountPage> {
                     children: [
                       _buildMenuItem(Icons.settings_outlined, "Settings", () {}),
                       const Divider(height: 1),
-                      _buildMenuItem(Icons.help_outline, "Help & Support", () {}),
+                      
+                      // [UBAH BAGIAN INI: Navigasi ke HelpCenterPage]
+                      _buildMenuItem(Icons.help_outline, "Help & Support", () {
+                         Navigator.of(context, rootNavigator: true).push(
+                            MaterialPageRoute(builder: (_) => const HelpCenterPage())
+                         );
+                      }),
+                      
                       const Divider(height: 1),
                       _buildMenuItem(Icons.privacy_tip_outlined, "Privacy Policy", () {}),
                     ],
