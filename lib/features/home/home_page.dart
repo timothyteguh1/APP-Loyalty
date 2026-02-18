@@ -33,7 +33,7 @@ class _HomePageState extends State<HomePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Selamat Datang Kembali, $_userName!"),
-            backgroundColor: const Color(0xFFD32F2F),
+            backgroundColor: const Color.fromARGB(255, 41, 196, 44),
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.all(20),
           ),
@@ -105,11 +105,15 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       
-      // [ANTI CRASH] Jaga Layout Stabil
+      // [PENTING] Mencegah layout naik-turun saat keyboard muncul
       resizeToAvoidBottomInset: false, 
       extendBody: true, 
 
       body: _buildBody(),
+
+      // [PENTING] Ganti ke centerFloat agar tombol melayang (Bukan menempel/berlubang)
+      // Ini menghilangkan error geometri saat keyboard turun.
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
 
       floatingActionButton: SizedBox(
         height: 65, width: 65,
@@ -117,6 +121,7 @@ class _HomePageState extends State<HomePage> {
           onPressed: () {},
           backgroundColor: const Color(0xFFD32F2F),
           shape: const CircleBorder(),
+          elevation: 4, // Tambahkan bayangan biar cantik
           child: const Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -126,18 +131,20 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      
       bottomNavigationBar: BottomAppBar(
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 8.0, 
+        // [PENTING] HAPUS baris 'shape: CircularNotchedRectangle()'
+        // [PENTING] HAPUS baris 'notchMargin'
+        // Tanpa shape = Tanpa perhitungan geometri rumit = Anti Crash.
         height: 70, 
         color: Colors.white,
+        surfaceTintColor: Colors.white,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _buildNavItem(icon: Icons.home_filled, label: "Home", index: 0),
             _buildNavItem(icon: Icons.card_giftcard, label: "Reward", index: 1),
-            const SizedBox(width: 48),
+            const SizedBox(width: 48), // Spacer tetap ada agar tombol Scan tidak menutupi ikon
             _buildNavItem(icon: Icons.history_outlined, label: "History", index: 3),
             _buildNavItem(icon: Icons.person_outline, label: "Account", index: 4),
           ],
@@ -168,6 +175,7 @@ class _HomePageState extends State<HomePage> {
           Stack(
             clipBehavior: Clip.none,
             children: [
+              // ... (Container Merah Background - Biarkan saja) ...
               Container(
                 height: 220,
                 width: double.infinity,
@@ -182,13 +190,24 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      "Selamat datang, $_userName",
-                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+                    // StreamBuilder untuk NAMA & FOTO agar update realtime
+                    StreamBuilder<AuthState>(
+                      stream: _supabase.auth.onAuthStateChange,
+                      builder: (context, snapshot) {
+                        final user = _supabase.auth.currentUser;
+                        final name = user?.userMetadata?['full_name'] ?? 'User Upsol';
+                        
+                        return Text(
+                          "Selamat datang, $name",
+                          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+                        );
+                      }
                     ),
                   ],
                 ),
               ),
+
+              // CARD PUTIH (FOTO ADA DI SINI)
               Positioned(
                 top: 100, left: 24, right: 24,
                 child: Container(
@@ -202,25 +221,45 @@ class _HomePageState extends State<HomePage> {
                   ),
                   child: Column(
                     children: [
-                      Row(
-                        children: [
-                          const CircleAvatar(
-                            radius: 24,
-                            backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=12'),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(_userName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                Text(_userEmail, style: TextStyle(color: Colors.grey[600], fontSize: 12), overflow: TextOverflow.ellipsis),
-                              ],
-                            ),
-                          ),
-                          Image.asset('assets/images/logo.png', height: 30),
-                        ],
+                      // [STREAM BUILDER LAGI UNTUK FOTO & EMAIL]
+                      StreamBuilder<AuthState>(
+                        stream: _supabase.auth.onAuthStateChange,
+                        builder: (context, snapshot) {
+                          final user = _supabase.auth.currentUser;
+                          final name = user?.userMetadata?['full_name'] ?? 'User Upsol';
+                          final email = user?.email ?? '-';
+                          
+                          // AMBIL AVATAR URL
+                          final String? avatarUrl = user?.userMetadata?['avatar_url'];
+                          final bool hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
+
+                          return Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 24,
+                                backgroundColor: Colors.grey[200],
+                                // TAMPILKAN FOTO DARI SUPABASE
+                                backgroundImage: hasAvatar
+                                    ? NetworkImage(avatarUrl!)
+                                    : const NetworkImage('https://i.pravatar.cc/150?img=12'),
+                                onBackgroundImageError: (_, __) {},
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    Text(email, style: TextStyle(color: Colors.grey[600], fontSize: 12), overflow: TextOverflow.ellipsis),
+                                  ],
+                                ),
+                              ),
+                              Image.asset('assets/images/logo.png', height: 30, errorBuilder: (c,e,s) => const Icon(Icons.star, color: Colors.amber)),
+                            ],
+                          );
+                        }
                       ),
+                      
                       const SizedBox(height: 16),
                       const Divider(),
                       const SizedBox(height: 12),
@@ -254,6 +293,7 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
           const SizedBox(height: 110),
+          // ... (Sisa kode Banner Promo ke bawah TETAP SAMA) ...
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(

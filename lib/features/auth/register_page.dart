@@ -68,15 +68,58 @@ class _RegisterPageState extends State<RegisterPage> {
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red, 
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+                  ),
                   onPressed: _isLoading ? null : () async {
+                    // 1. Validasi Input Kosong
+                    if (_emailController.text.isEmpty || _nameController.text.isEmpty || _selectedDomisili == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Semua data wajib diisi!")));
+                      return;
+                    }
+
+                    // 2. Validasi Password
                     if (_passwordController.text != _confirmPasswordController.text) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Password tidak cocok!")));
                       return;
                     }
-                    // Jalankan _authController.signUp di sini...
+
+                    setState(() => _isLoading = true);
+
+                    try {
+                      // 3. Panggil Controller
+                      await _authController.signUp(
+                        email: _emailController.text.trim(),
+                        password: _passwordController.text.trim(),
+                        name: _nameController.text.trim(),
+                        domisili: _selectedDomisili!, // Kirim domisili yang dipilih
+                      );
+                      
+                      // --- [ANTI CRASH] Cek apakah layar masih aktif ---
+                      if (!mounted) return;
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Berhasil Daftar! Masuk ke Home..."), backgroundColor: Colors.green),
+                      );
+
+                      // --- [ANTI CRASH] Paksa pindah ke Home & Hapus histori Login/Register ---
+                      // Ini mencegah bentrok dengan Auto-Login Listener
+                      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+                        );
+                      }
+                    } finally {
+                      if (mounted) setState(() => _isLoading = false);
+                    }
                   },
-                  child: const Text("Daftar", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: _isLoading 
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text("Daftar", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
               ),
               const SizedBox(height: 20),
