@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../utils/ui_helpers.dart'; // Import Helper UI kita
+import 'package:image_picker/image_picker.dart';
+import '../../utils/ui_helpers.dart'; 
 
 class ScanQrPage extends StatefulWidget {
   const ScanQrPage({super.key});
@@ -11,38 +12,76 @@ class ScanQrPage extends StatefulWidget {
 }
 
 class _ScanQrPageState extends State<ScanQrPage> {
-  final MobileScannerController _cameraController = MobileScannerController();
+  final MobileScannerController _cameraController = MobileScannerController(
+    formats: const [BarcodeFormat.qrCode], // Fokus QR saja agar ringan
+  );
   final _supabase = Supabase.instance.client;
-  bool _isProcessing = false; // Supaya gak scan berkali-kali dalam 1 detik
+  bool _isProcessing = false;
 
-  // --- LOGIKA SAAT QR TERDETEKSI ---
+  String _debugScanResult = "Arahkan QR atau Upload Gambar...";
+
+  // --- LOGIKA UPLOAD GAMBAR DARI LAPTOP/HP ---
+  Future<void> _pickAndScanImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (image == null) return; 
+
+    setState(() => _isProcessing = true);
+    showLoading(context);
+
+    try {
+      // Tunggu sebentar agar loading screen muncul sempurna di web
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      final BarcodeCapture? capture = await _cameraController.analyzeImage(image.path);
+
+      if (!mounted) return;
+      hideLoading(context);
+
+      if (capture != null && capture.barcodes.isNotEmpty) {
+        final String? code = capture.barcodes.first.rawValue;
+        if (code != null) {
+          setState(() => _debugScanResult = "Terbaca dari Upload: $code");
+          _processQrCode(code); 
+        }
+      } else {
+        _showError("QR Code tidak terdeteksi pada gambar ini.");
+        setState(() => _isProcessing = false);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      hideLoading(context);
+      _showError("Gagal membaca gambar. Gunakan gambar PNG/JPG yang tajam.");
+      setState(() => _isProcessing = false);
+    }
+  }
+
+  // --- LOGIKA LIVE CAMERA ---
   void _onDetect(BarcodeCapture capture) async {
     if (_isProcessing) return;
-    final List<Barcode> barcodes = capture.barcodes;
     
-    for (final barcode in barcodes) {
+    for (final barcode in capture.barcodes) {
       if (barcode.rawValue != null) {
         final String code = barcode.rawValue!;
         
-        // Cek apakah kode QR valid (Misal formatnya harus "UPSOL:50")
-        // Contoh kode QR: "UPSOL_POINT_50" -> Artinya nambah 50 poin
-        if (code.startsWith("UPSOL_POINT_")) {
-          _processQrCode(code);
-          break; // Stop loop setelah dapat 1 kode valid
-        } else {
-          _showError("QR Code tidak dikenali!");
+        if (mounted) {
+          setState(() => _debugScanResult = "Terbaca dari Kamera: $code");
         }
+        
+        _processQrCode(code);
+        break; 
       }
     }
   }
 
-Future<void> _processQrCode(String code) async {
+  // --- LOGIKA KE DATABASE SUPABASE ---
+  Future<void> _processQrCode(String code) async {
     setState(() => _isProcessing = true);
     _cameraController.stop(); 
     showLoading(context);
 
     try {
-      // Panggil Robot Database 'scan_qr'
       final response = await _supabase.rpc('scan_qr', params: {
         'code_input': code
       });
@@ -51,7 +90,6 @@ Future<void> _processQrCode(String code) async {
       hideLoading(context);
 
       if (response['success'] == true) {
-        // SUKSES
         await showDialog(
           context: context,
           barrierDismissible: false,
@@ -68,8 +106,8 @@ Future<void> _processQrCode(String code) async {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD32F2F)),
                 onPressed: () {
-                  Navigator.pop(context); // Tutup Dialog
-                  Navigator.pop(context); // Kembali ke Home
+                  Navigator.pop(context); 
+                  Navigator.pop(context); 
                 },
                 child: const Text("OK", style: TextStyle(color: Colors.white)),
               )
@@ -77,89 +115,104 @@ Future<void> _processQrCode(String code) async {
           ),
         );
       } else {
-        // GAGAL (Kode salah / Sudah dipakai)
-        _showError(response['message']);
+        _showError(response['message']); // Misal: "Kode sudah terpakai"
         _cameraController.start();
         setState(() => _isProcessing = false);
       }
 
     } catch (e) {
       if (mounted) hideLoading(context);
-      _showError("Terjadi kesalahan sistem.");
+      _showError("Terjadi kesalahan sistem database.");
       _cameraController.start();
       setState(() => _isProcessing = false);
     }
   }
 
+  // --- FITUR TESTING MANUAL (KETIK KODE) ---
+  void _showManualInputDialog() {
+    final TextEditingController inputController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Input Manual QR"),
+        content: TextField(
+          controller: inputController,
+          decoration: const InputDecoration(hintText: "Contoh: UPSOL-TEST-50"),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Batal")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD32F2F)),
+            onPressed: () {
+              Navigator.pop(context);
+              if (inputController.text.isNotEmpty) {
+                _processQrCode(inputController.text.trim());
+              }
+            },
+            child: const Text("Proses", style: TextStyle(color: Colors.white)),
+          )
+        ],
+      ),
+    );
+  }
+
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red, duration: const Duration(seconds: 1)),
+      SnackBar(content: Text(message), backgroundColor: Colors.red, duration: const Duration(seconds: 3)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, // Background Hitam sesuai desain
+      backgroundColor: Colors.black, 
       body: Stack(
         children: [
-          // 1. LAYAR KAMERA
-          MobileScanner(
-            controller: _cameraController,
-            onDetect: _onDetect,
-          ),
-
-          // 2. OVERLAY GELAP & FRAME
-          // Kita pakai ColorFiltered untuk bikin "lubang" kotak di tengah
-          ColorFiltered(
-            colorFilter: const ColorFilter.mode(
-              Colors.black54, // Gelap transparan
-              BlendMode.srcOut,
-            ),
-            child: Stack(
+          // 1. BOX CAMERA
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.transparent,
-                    backgroundBlendMode: BlendMode.dstOut,
+                  width: 280,
+                  height: 280,
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(18),
+                    child: Stack(
+                      children: [
+                        MobileScanner(
+                          controller: _cameraController,
+                          onDetect: _onDetect,
+                          fit: BoxFit.cover,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                Center(
-                  child: Container(
-                    width: 280,
-                    height: 280,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                
+                const SizedBox(height: 20),
+                
+                // TEKS DEBUG REALTIME
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(8)),
+                  child: Text(
+                    _debugScanResult, 
+                    style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14),
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ],
             ),
           ),
 
-          // 3. GARIS MERAH SCANNER (Visual Only)
-          // 3. GARIS MERAH SCANNER (Visual Only)
-          Center(
-            child: Container(
-              width: 280,
-              height: 2,
-              margin: const EdgeInsets.only(bottom: 20),
-              // PERBAIKAN: Masukkan color & boxShadow ke dalam BoxDecoration
-              decoration: BoxDecoration(
-                color: Colors.red,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.red.withOpacity(0.5), 
-                    blurRadius: 10, 
-                    spreadRadius: 2
-                  )
-                ],
-              ),
-            ),
-          ),
-          // 4. HEADER (Tombol Kembali & Judul)
+          // 2. HEADER
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
@@ -171,28 +224,15 @@ Future<void> _processQrCode(String code) async {
                         icon: const Icon(Icons.arrow_back, color: Colors.white),
                         onPressed: () => Navigator.pop(context),
                       ),
-                      const Text(
-                        "Kembali",
-                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                      ),
+                      const Text("Kembali", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                     ],
-                  ),
-                  const SizedBox(height: 40),
-                  const Text(
-                    "Scan QR Code",
-                    style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    "Scan QR Code untuk mendapatkan poin.",
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ],
               ),
             ),
           ),
 
-          // 5. TOMBOL KONTROL BAWAH (Flash & Gallery)
+          // 3. TOMBOL KONTROL BAWAH (Upload & Manual Input)
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
@@ -200,28 +240,13 @@ Future<void> _processQrCode(String code) async {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Tombol Upload (Placeholder, krn butuh logic tambahan image_picker)
-                  _buildCircleButton(Icons.image, "Upload Gambar", () {
-                     _showError("Fitur upload segera hadir!");
-                  }),
+                  // TOMBOL UPLOAD GAMBAR
+                  _buildCircleButton(Icons.image, "Upload QR", _pickAndScanImage),
                   
-                  const SizedBox(width: 60),
+                  const SizedBox(width: 40),
 
-          
-                  // Tombol Flash (VERSI PERBAIKAN)
-                  ValueListenableBuilder(
-                    valueListenable: _cameraController, // Dengarkan controllernya langsung
-                    builder: (context, state, child) {
-                      // Ambil status torch dari state value
-                      final bool isTorchOn = state.torchState == TorchState.on;
-                      
-                      return _buildCircleButton(
-                        isTorchOn ? Icons.flash_on : Icons.flash_off, 
-                        "Nyalakan Flash", 
-                        () => _cameraController.toggleTorch()
-                      );
-                    },
-                  ),
+                  // TOMBOL INPUT MANUAL (Penyelamat Testing)
+                  _buildCircleButton(Icons.keyboard, "Input Manual", _showManualInputDialog),
                 ],
               ),
             ),
@@ -240,10 +265,7 @@ Future<void> _processQrCode(String code) async {
           borderRadius: BorderRadius.circular(30),
           child: Container(
             width: 60, height: 60,
-            decoration: const BoxDecoration(
-              color: Colors.white, 
-              shape: BoxShape.circle,
-            ),
+            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
             child: Icon(icon, color: Colors.black, size: 28),
           ),
         ),
