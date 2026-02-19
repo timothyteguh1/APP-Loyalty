@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:upsol_loyalty/features/history/history_page.dart';
 import 'package:upsol_loyalty/features/reward/reward_page.dart';
 import '../../controllers/auth_controller.dart';
-import '../account/account_page.dart'; 
+import '../account/account_page.dart';
+import '../scan/scan_qr_page.dart';
+import '../../utils/ui_helpers.dart'; // Biar bisa pake navigateTo
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -16,7 +19,7 @@ class _HomePageState extends State<HomePage> {
   final _authController = AuthController();
   final _supabase = Supabase.instance.client;
 
-  int _selectedIndex = 0; 
+  int _selectedIndex = 0;
   int _currentBannerIndex = 0;
   late PageController _pageController;
   Timer? _timer;
@@ -28,7 +31,7 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _pageController = PageController(initialPage: 0);
     _fetchBanners();
-    
+
     // SnackBar Welcome (Saya matikan sementara biar gak ganggu tes poin, aktifkan jika mau)
     /*
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -91,11 +94,13 @@ class _HomePageState extends State<HomePage> {
   Widget _buildBody() {
     switch (_selectedIndex) {
       case 0:
-        return _buildHomeContent(); 
+        return _buildHomeContent();
       case 1:
-      return const RewardPage(); // Pastikan sudah di-import
+        return const RewardPage(); // Pastikan sudah di-import
+      case 3:
+        return const HistoryPage();
       case 4:
-        return const AccountPage(); 
+        return const AccountPage();
       default:
         return const Center(child: Text("Fitur dalam pengembangan"));
     }
@@ -105,32 +110,36 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      resizeToAvoidBottomInset: false, 
-      extendBody: true, 
+      resizeToAvoidBottomInset: false,
+      extendBody: true,
 
       body: _buildBody(),
 
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
 
       floatingActionButton: SizedBox(
-        height: 65, width: 65,
+        height: 65,
+        width: 65,
         child: FloatingActionButton(
-          onPressed: () {},
+          onPressed: () {
+            // Pindah ke Halaman Scan dengan animasi
+            navigateTo(context, const ScanQrPage());
+          },
           backgroundColor: const Color(0xFFD32F2F),
           shape: const CircleBorder(),
-          elevation: 4, 
+          elevation: 4,
           child: const Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.qr_code_scanner, color: Colors.white, size: 28),
-              Text("Scan", style: TextStyle(color: Colors.white, fontSize: 9))
+              Text("Scan", style: TextStyle(color: Colors.white, fontSize: 9)),
             ],
           ),
         ),
       ),
-      
+
       bottomNavigationBar: BottomAppBar(
-        height: 70, 
+        height: 70,
         color: Colors.white,
         surfaceTintColor: Colors.white,
         child: Row(
@@ -138,16 +147,28 @@ class _HomePageState extends State<HomePage> {
           children: [
             _buildNavItem(icon: Icons.home_filled, label: "Home", index: 0),
             _buildNavItem(icon: Icons.card_giftcard, label: "Reward", index: 1),
-            const SizedBox(width: 48), 
-            _buildNavItem(icon: Icons.history_outlined, label: "History", index: 3),
-            _buildNavItem(icon: Icons.person_outline, label: "Account", index: 4),
+            const SizedBox(width: 48),
+            _buildNavItem(
+              icon: Icons.history_outlined,
+              label: "History",
+              index: 3,
+            ),
+            _buildNavItem(
+              icon: Icons.person_outline,
+              label: "Account",
+              index: 4,
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildNavItem({required IconData icon, required String label, required int index}) {
+  Widget _buildNavItem({
+    required IconData icon,
+    required String label,
+    required int index,
+  }) {
     final bool isSelected = _selectedIndex == index;
     return InkWell(
       onTap: () => setState(() => _selectedIndex = index),
@@ -155,7 +176,14 @@ class _HomePageState extends State<HomePage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, color: isSelected ? const Color(0xFFD32F2F) : Colors.grey),
-          Text(label, style: TextStyle(fontSize: 12, color: isSelected ? const Color(0xFFD32F2F) : Colors.grey, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: isSelected ? const Color(0xFFD32F2F) : Colors.grey,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
         ],
       ),
     );
@@ -189,13 +217,18 @@ class _HomePageState extends State<HomePage> {
                       stream: _supabase.auth.onAuthStateChange,
                       builder: (context, snapshot) {
                         final user = _supabase.auth.currentUser;
-                        final name = user?.userMetadata?['full_name'] ?? 'User Upsol';
-                        
+                        final name =
+                            user?.userMetadata?['full_name'] ?? 'User Upsol';
+
                         return Text(
                           "Selamat datang, $name",
-                          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
                         );
-                      }
+                      },
                     ),
                   ],
                 ),
@@ -203,14 +236,20 @@ class _HomePageState extends State<HomePage> {
 
               // CARD PUTIH (AVATAR & POIN)
               Positioned(
-                top: 100, left: 24, right: 24,
+                top: 100,
+                left: 24,
+                right: 24,
                 child: Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 15, offset: const Offset(0, 5)),
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5),
+                      ),
                     ],
                   ),
                   child: Column(
@@ -220,10 +259,13 @@ class _HomePageState extends State<HomePage> {
                         stream: _supabase.auth.onAuthStateChange,
                         builder: (context, snapshot) {
                           final user = _supabase.auth.currentUser;
-                          final name = user?.userMetadata?['full_name'] ?? 'User Upsol';
+                          final name =
+                              user?.userMetadata?['full_name'] ?? 'User Upsol';
                           final email = user?.email ?? '-';
-                          final String? avatarUrl = user?.userMetadata?['avatar_url'];
-                          final bool hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
+                          final String? avatarUrl =
+                              user?.userMetadata?['avatar_url'];
+                          final bool hasAvatar =
+                              avatarUrl != null && avatarUrl.isNotEmpty;
 
                           return Row(
                             children: [
@@ -232,7 +274,9 @@ class _HomePageState extends State<HomePage> {
                                 backgroundColor: Colors.grey[200],
                                 backgroundImage: hasAvatar
                                     ? NetworkImage(avatarUrl!)
-                                    : const NetworkImage('https://i.pravatar.cc/150?img=12'),
+                                    : const NetworkImage(
+                                        'https://i.pravatar.cc/150?img=12',
+                                      ),
                                 onBackgroundImageError: (_, __) {},
                               ),
                               const SizedBox(width: 12),
@@ -240,21 +284,39 @@ class _HomePageState extends State<HomePage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                    Text(email, style: TextStyle(color: Colors.grey[600], fontSize: 12), overflow: TextOverflow.ellipsis),
+                                    Text(
+                                      name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    Text(
+                                      email,
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 12,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ],
                                 ),
                               ),
-                              Image.asset('assets/images/logo.png', height: 30, errorBuilder: (c,e,s) => const Icon(Icons.star, color: Colors.amber)),
+                              Image.asset(
+                                'assets/images/logo.png',
+                                height: 30,
+                                errorBuilder: (c, e, s) =>
+                                    const Icon(Icons.star, color: Colors.amber),
+                              ),
                             ],
                           );
-                        }
+                        },
                       ),
-                      
+
                       const SizedBox(height: 16),
                       const Divider(),
                       const SizedBox(height: 12),
-                      
+
                       // --- [BAGIAN POIN REALTIME (DARI DATABASE)] ---
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -262,24 +324,39 @@ class _HomePageState extends State<HomePage> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text("Poin anda saat ini", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                              Text(
+                                "Poin anda saat ini",
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
                               const SizedBox(height: 4),
-                              
+
                               // STREAM POIN DARI TABEL PROFILES
                               StreamBuilder<List<Map<String, dynamic>>>(
                                 stream: _supabase
                                     .from('profiles')
                                     .stream(primaryKey: ['id'])
-                                    .eq('id', _supabase.auth.currentUser?.id ?? ''),
+                                    .eq(
+                                      'id',
+                                      _supabase.auth.currentUser?.id ?? '',
+                                    ),
                                 builder: (context, snapshot) {
                                   String points = "0"; // Default 0
-                                  if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-                                    points = snapshot.data![0]['points'].toString();
+                                  if (snapshot.hasData &&
+                                      snapshot.data!.isNotEmpty) {
+                                    points = snapshot.data![0]['points']
+                                        .toString();
                                   }
-                                  
+
                                   return Text(
                                     "$points Points", // Tampilkan Poin Asli
-                                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black),
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.black,
+                                    ),
                                   );
                                 },
                               ),
@@ -290,8 +367,13 @@ class _HomePageState extends State<HomePage> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFD32F2F),
                               foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 10,
+                              ),
                             ),
                             child: const Text("Redeem"),
                           ),
@@ -304,51 +386,85 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
           const SizedBox(height: 110),
-          
+
           // BANNER PROMO (TETAP SAMA)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("Penawaran Menarik", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const Text(
+                  "Penawaran Menarik",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 12),
                 _isLoadingBanner
-                  ? AspectRatio(aspectRatio: 16 / 9, child: Container(color: Colors.grey[200], child: const Center(child: CircularProgressIndicator())))
-                  : _banners.isEmpty
-                      ? Container(height: 150, width: double.infinity, color: Colors.grey[200], child: const Center(child: Text("Belum ada promo")))
-                      : Column(
-                          children: [
-                            AspectRatio(
-                              aspectRatio: 16 / 9,
-                              child: PageView.builder(
-                                controller: _pageController,
-                                onPageChanged: (index) => setState(() => _currentBannerIndex = index),
-                                itemCount: _banners.length,
-                                itemBuilder: (context, index) {
-                                  return Container(
-                                    margin: const EdgeInsets.symmetric(horizontal: 0),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: Image.network(_banners[index]['image_url'] ?? '', fit: BoxFit.cover, errorBuilder: (ctx, err, stack) => const Icon(Icons.broken_image)),
+                    ? AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: Container(
+                          color: Colors.grey[200],
+                          child: const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
+                      )
+                    : _banners.isEmpty
+                    ? Container(
+                        height: 150,
+                        width: double.infinity,
+                        color: Colors.grey[200],
+                        child: const Center(child: Text("Belum ada promo")),
+                      )
+                    : Column(
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: PageView.builder(
+                              controller: _pageController,
+                              onPageChanged: (index) =>
+                                  setState(() => _currentBannerIndex = index),
+                              itemCount: _banners.length,
+                              itemBuilder: (context, index) {
+                                return Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 0,
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: Image.network(
+                                      _banners[index]['image_url'] ?? '',
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (ctx, err, stack) =>
+                                          const Icon(Icons.broken_image),
                                     ),
-                                  );
-                                },
-                              ),
+                                  ),
+                                );
+                              },
                             ),
-                            const SizedBox(height: 12),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: List.generate(_banners.length, (index) => AnimatedContainer(
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(
+                              _banners.length,
+                              (index) => AnimatedContainer(
                                 duration: const Duration(milliseconds: 300),
-                                margin: const EdgeInsets.symmetric(horizontal: 4),
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
                                 width: _currentBannerIndex == index ? 24 : 8,
                                 height: 8,
-                                decoration: BoxDecoration(color: _currentBannerIndex == index ? const Color(0xFFD32F2F) : Colors.grey[300], borderRadius: BorderRadius.circular(4)),
-                              )),
+                                decoration: BoxDecoration(
+                                  color: _currentBannerIndex == index
+                                      ? const Color(0xFFD32F2F)
+                                      : Colors.grey[300],
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
+                      ),
                 const SizedBox(height: 30),
               ],
             ),
