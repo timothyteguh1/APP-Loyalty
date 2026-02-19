@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:upsol_loyalty/features/reward/reward_page.dart';
 import '../../controllers/auth_controller.dart';
 import '../account/account_page.dart'; 
 
@@ -28,11 +29,15 @@ class _HomePageState extends State<HomePage> {
     _pageController = PageController(initialPage: 0);
     _fetchBanners();
     
+    // SnackBar Welcome (Saya matikan sementara biar gak ganggu tes poin, aktifkan jika mau)
+    /*
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
+        final user = _supabase.auth.currentUser;
+        final name = user?.userMetadata?['full_name'] ?? 'User';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Selamat Datang Kembali, $_userName!"),
+            content: Text("Selamat Datang Kembali, $name!"),
             backgroundColor: const Color.fromARGB(255, 41, 196, 44),
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.all(20),
@@ -40,6 +45,7 @@ class _HomePageState extends State<HomePage> {
         );
       }
     });
+    */
   }
 
   @override
@@ -82,17 +88,12 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  String get _userName {
-    final user = _authController.currentUser;
-    return user?.userMetadata?['full_name'] ?? 'User Upsol'; 
-  }
-
-  String get _userEmail => _authController.currentUser?.email ?? '';
-
   Widget _buildBody() {
     switch (_selectedIndex) {
       case 0:
         return _buildHomeContent(); 
+      case 1:
+      return const RewardPage(); // Pastikan sudah di-import
       case 4:
         return const AccountPage(); 
       default:
@@ -104,15 +105,11 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      
-      // [PENTING] Mencegah layout naik-turun saat keyboard muncul
       resizeToAvoidBottomInset: false, 
       extendBody: true, 
 
       body: _buildBody(),
 
-      // [PENTING] Ganti ke centerFloat agar tombol melayang (Bukan menempel/berlubang)
-      // Ini menghilangkan error geometri saat keyboard turun.
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
 
       floatingActionButton: SizedBox(
@@ -121,7 +118,7 @@ class _HomePageState extends State<HomePage> {
           onPressed: () {},
           backgroundColor: const Color(0xFFD32F2F),
           shape: const CircleBorder(),
-          elevation: 4, // Tambahkan bayangan biar cantik
+          elevation: 4, 
           child: const Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -133,9 +130,6 @@ class _HomePageState extends State<HomePage> {
       ),
       
       bottomNavigationBar: BottomAppBar(
-        // [PENTING] HAPUS baris 'shape: CircularNotchedRectangle()'
-        // [PENTING] HAPUS baris 'notchMargin'
-        // Tanpa shape = Tanpa perhitungan geometri rumit = Anti Crash.
         height: 70, 
         color: Colors.white,
         surfaceTintColor: Colors.white,
@@ -144,7 +138,7 @@ class _HomePageState extends State<HomePage> {
           children: [
             _buildNavItem(icon: Icons.home_filled, label: "Home", index: 0),
             _buildNavItem(icon: Icons.card_giftcard, label: "Reward", index: 1),
-            const SizedBox(width: 48), // Spacer tetap ada agar tombol Scan tidak menutupi ikon
+            const SizedBox(width: 48), 
             _buildNavItem(icon: Icons.history_outlined, label: "History", index: 3),
             _buildNavItem(icon: Icons.person_outline, label: "Account", index: 4),
           ],
@@ -175,7 +169,7 @@ class _HomePageState extends State<HomePage> {
           Stack(
             clipBehavior: Clip.none,
             children: [
-              // ... (Container Merah Background - Biarkan saja) ...
+              // BACKGROUND MERAH
               Container(
                 height: 220,
                 width: double.infinity,
@@ -190,7 +184,7 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // StreamBuilder untuk NAMA & FOTO agar update realtime
+                    // STREAM NAMA USER
                     StreamBuilder<AuthState>(
                       stream: _supabase.auth.onAuthStateChange,
                       builder: (context, snapshot) {
@@ -207,7 +201,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
 
-              // CARD PUTIH (FOTO ADA DI SINI)
+              // CARD PUTIH (AVATAR & POIN)
               Positioned(
                 top: 100, left: 24, right: 24,
                 child: Container(
@@ -221,15 +215,13 @@ class _HomePageState extends State<HomePage> {
                   ),
                   child: Column(
                     children: [
-                      // [STREAM BUILDER LAGI UNTUK FOTO & EMAIL]
+                      // STREAM AVATAR & EMAIL
                       StreamBuilder<AuthState>(
                         stream: _supabase.auth.onAuthStateChange,
                         builder: (context, snapshot) {
                           final user = _supabase.auth.currentUser;
                           final name = user?.userMetadata?['full_name'] ?? 'User Upsol';
                           final email = user?.email ?? '-';
-                          
-                          // AMBIL AVATAR URL
                           final String? avatarUrl = user?.userMetadata?['avatar_url'];
                           final bool hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
 
@@ -238,7 +230,6 @@ class _HomePageState extends State<HomePage> {
                               CircleAvatar(
                                 radius: 24,
                                 backgroundColor: Colors.grey[200],
-                                // TAMPILKAN FOTO DARI SUPABASE
                                 backgroundImage: hasAvatar
                                     ? NetworkImage(avatarUrl!)
                                     : const NetworkImage('https://i.pravatar.cc/150?img=12'),
@@ -263,6 +254,8 @@ class _HomePageState extends State<HomePage> {
                       const SizedBox(height: 16),
                       const Divider(),
                       const SizedBox(height: 12),
+                      
+                      // --- [BAGIAN POIN REALTIME (DARI DATABASE)] ---
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -271,7 +264,25 @@ class _HomePageState extends State<HomePage> {
                             children: [
                               Text("Poin anda saat ini", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
                               const SizedBox(height: 4),
-                              const Text("120 Points", style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black)),
+                              
+                              // STREAM POIN DARI TABEL PROFILES
+                              StreamBuilder<List<Map<String, dynamic>>>(
+                                stream: _supabase
+                                    .from('profiles')
+                                    .stream(primaryKey: ['id'])
+                                    .eq('id', _supabase.auth.currentUser?.id ?? ''),
+                                builder: (context, snapshot) {
+                                  String points = "0"; // Default 0
+                                  if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+                                    points = snapshot.data![0]['points'].toString();
+                                  }
+                                  
+                                  return Text(
+                                    "$points Points", // Tampilkan Poin Asli
+                                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black),
+                                  );
+                                },
+                              ),
                             ],
                           ),
                           ElevatedButton(
@@ -293,7 +304,8 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
           const SizedBox(height: 110),
-          // ... (Sisa kode Banner Promo ke bawah TETAP SAMA) ...
+          
+          // BANNER PROMO (TETAP SAMA)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(

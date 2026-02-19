@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart'; 
 import '../../controllers/auth_controller.dart';
 import 'edit_profile_page.dart';
-import 'help_center_page.dart'; // [PENTING] Import Halaman Baru
+import 'help_center_page.dart'; 
+import 'privacy_policy_page.dart';
+import 'settings_page.dart';
+// [PENTING] Import Halaman Login agar bisa kembali ke sana
+import '../auth/login_page.dart'; 
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
@@ -17,8 +22,11 @@ class _AccountPageState extends State<AccountPage> {
     setState(() {}); 
   }
 
+  // --- [PERBAIKAN LOGOUT DISINI] ---
   Future<void> _confirmLogout() async {
     final authController = AuthController();
+    
+    // 1. Tanya dulu yakin mau keluar?
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -32,13 +40,48 @@ class _AccountPageState extends State<AccountPage> {
     );
 
     if (confirm == true) {
+      // 2. Proses Logout di Database
       await authController.signOut();
+      
+      if (!mounted) return;
+
+      // 3. [SOLUSI] Paksa Pindah ke Login Page & Hapus Semua Halaman Sebelumnya
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginPage()), 
+        (route) => false, // false artinya: hapus semua rute di belakang (tombol back hilang)
+      );
+    }
+  }
+
+  Future<void> _contactSupport() async {
+    try {
+      final data = await Supabase.instance.client
+          .from('app_config')
+          .select('value')
+          .eq('key', 'wa_admin') 
+          .single();
+
+      final String phone = data['value']; 
+      final user = Supabase.instance.client.auth.currentUser;
+      final String emailUser = user?.email ?? 'Tamu';
+      final String message = "Halo Admin Upsol, saya butuh bantuan terkait akun $emailUser.";
+      final Uri url = Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
+
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        throw 'Gagal membuka WhatsApp';
+      }
+    } catch (e) {
+      if (mounted) {
+        // Jika tabel config belum ada, fallback ke Help Center Page
+        Navigator.of(context, rootNavigator: true).push(
+           MaterialPageRoute(builder: (_) => const HelpCenterPage())
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 1. AMBIL DATA USER
     final user = Supabase.instance.client.auth.currentUser;
     final String name = user?.userMetadata?['full_name'] ?? 'User Upsol';
     final String email = user?.email ?? '-';
@@ -147,10 +190,13 @@ class _AccountPageState extends State<AccountPage> {
                   decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
                   child: Column(
                     children: [
-                      _buildMenuItem(Icons.settings_outlined, "Settings", () {}),
+                      _buildMenuItem(Icons.settings_outlined, "Settings", () {
+                         Navigator.of(context, rootNavigator: true).push(
+                            MaterialPageRoute(builder: (_) => const SettingsPage())
+                         );
+                      }),
                       const Divider(height: 1),
                       
-                      // [UBAH BAGIAN INI: Navigasi ke HelpCenterPage]
                       _buildMenuItem(Icons.help_outline, "Help & Support", () {
                          Navigator.of(context, rootNavigator: true).push(
                             MaterialPageRoute(builder: (_) => const HelpCenterPage())
@@ -158,7 +204,11 @@ class _AccountPageState extends State<AccountPage> {
                       }),
                       
                       const Divider(height: 1),
-                      _buildMenuItem(Icons.privacy_tip_outlined, "Privacy Policy", () {}),
+                      _buildMenuItem(Icons.privacy_tip_outlined, "Privacy Policy", () {
+                         Navigator.of(context, rootNavigator: true).push(
+                            MaterialPageRoute(builder: (_) => const PrivacyPolicyPage())
+                         );
+                      }),
                     ],
                   ),
                 ),
