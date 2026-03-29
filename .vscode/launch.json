@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "App Loyalty (Toko)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart"
+    },
+    {
+      "name": "App Admin",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main_admin.dart"
+    }
+  ]
+}
