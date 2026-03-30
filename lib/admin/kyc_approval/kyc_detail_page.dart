@@ -130,7 +130,16 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
         'updated_at': DateTime.now().toIso8601String(),
       };
 
-     await _admin
+      // --- [PERBAIKAN LOGIKA: MENYIMPAN ALASAN PENOLAKAN] ---
+      // Kita pastikan alasan penolakan ikut tersimpan ke database
+      if (status == 'REJECTED' && reason != null && reason.isNotEmpty) {
+        updateData['rejection_reason'] = reason;
+      } else if (status == 'APPROVED') {
+        // Jika sebelumnya sempat ditolak tapi sekarang disetujui, bersihkan alasan lamanya
+        updateData['rejection_reason'] = null; 
+      }
+
+      await _admin
           .from('profiles')
           .update(updateData)
           .eq('id', widget.store['id']);

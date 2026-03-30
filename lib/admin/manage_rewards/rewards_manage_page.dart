@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import '../admin_supabase.dart';
 
 class RewardsManagePage extends StatefulWidget {
@@ -10,7 +12,6 @@ class RewardsManagePage extends StatefulWidget {
 }
 
 class _RewardsManagePageState extends State<RewardsManagePage> {
-  final _supabase = Supabase.instance.client;
   final _admin = AdminSupabase.client;
   List<Map<String, dynamic>> _rewards = [];
   bool _isLoading = true;
@@ -24,7 +25,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
   Future<void> _fetchRewards() async {
     setState(() => _isLoading = true);
     try {
-      final data = await _supabase
+      final data = await _admin
           .from('rewards')
           .select()
           .order('created_at', ascending: false);
@@ -92,6 +93,13 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
 
     if (confirm != true) return;
     try {
+      // Auto-delete file gambar di Storage jika ada
+      final imageUrl = reward['image_url'] as String?;
+      if (imageUrl != null && imageUrl.contains('upsol-assets')) {
+        final fileName = imageUrl.split('/').last;
+        await _admin.storage.from('upsol-assets').remove([fileName]);
+      }
+
       await _admin.from('rewards').delete().eq('id', reward['id']);
       _fetchRewards();
     } catch (e) {
@@ -109,7 +117,9 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
     final pointsCtrl = TextEditingController(text: existing?['points_required']?.toString() ?? '');
     final stockCtrl = TextEditingController(text: existing?['stock']?.toString() ?? '100');
     final termsCtrl = TextEditingController(text: existing?['terms_condition'] ?? '');
-    final imageCtrl = TextEditingController(text: existing?['image_url'] ?? '');
+    
+    File? selectedImage; // Menyimpan file gambar baru
+    String? existingImageUrl = existing?['image_url'];
     String selectedType = existing?['type'] ?? 'VOUCHER';
     bool isSaving = false;
 
@@ -120,7 +130,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) {
           return Container(
-            height: MediaQuery.of(ctx).size.height * 0.85,
+            height: MediaQuery.of(ctx).size.height * 0.9,
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -227,12 +237,49 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                           ],
                         ),
                         const SizedBox(height: 16),
-                        _formField('URL Gambar', imageCtrl, 'https://...', keyboardType: TextInputType.url),
+                        
+                        // --- [UI UPLOAD GAMBAR] ---
+                        const Text('Gambar Hadiah', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: () async {
+                            final picker = ImagePicker();
+                            final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                            if (pickedFile != null) {
+                              setModalState(() => selectedImage = File(pickedFile.path));
+                            }
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            height: 140,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FAFB),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey[300]!, style: BorderStyle.solid),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: selectedImage != null
+                                  ? Image.file(selectedImage!, fit: BoxFit.cover)
+                                  : existingImageUrl != null && existingImageUrl!.isNotEmpty
+                                      ? Image.network(existingImageUrl!, fit: BoxFit.cover)
+                                      : Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.add_photo_alternate_rounded, size: 36, color: Colors.grey[400]),
+                                            const SizedBox(height: 8),
+                                            Text('Tap untuk pilih gambar', style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+                                          ],
+                                        ),
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 16),
+
                         _formField('Syarat & Ketentuan', termsCtrl, 'Opsional', maxLines: 3),
                         const SizedBox(height: 24),
 
-                        // Save button
+                        // --- [TOMBOL SIMPAN] ---
                         SizedBox(
                           width: double.infinity,
                           height: 52,
@@ -244,15 +291,27 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                                 );
                                 return;
                               }
+                              
                               setModalState(() => isSaving = true);
                               try {
+                                String? finalImageUrl = existingImageUrl;
+
+                                // Upload ke storage jika admin memilih gambar baru
+                                if (selectedImage != null) {
+                                  final ext = selectedImage!.path.split('.').last;
+                                  final fileName = 'reward_${DateTime.now().millisecondsSinceEpoch}.$ext';
+                                  
+                                  await _admin.storage.from('upsol-assets').upload(fileName, selectedImage!);
+                                  finalImageUrl = _admin.storage.from('upsol-assets').getPublicUrl(fileName);
+                                }
+
                                 final data = {
                                   'name': nameCtrl.text.trim(),
                                   'description': descCtrl.text.trim(),
                                   'type': selectedType,
                                   'points_required': int.parse(pointsCtrl.text.trim()),
                                   'stock': int.tryParse(stockCtrl.text.trim()) ?? 100,
-                                  'image_url': imageCtrl.text.trim().isEmpty ? null : imageCtrl.text.trim(),
+                                  'image_url': finalImageUrl,
                                   'terms_condition': termsCtrl.text.trim().isEmpty ? null : termsCtrl.text.trim(),
                                   'is_active': true,
                                 };

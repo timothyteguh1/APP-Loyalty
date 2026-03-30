@@ -10,7 +10,6 @@ class ManualPointsPage extends StatefulWidget {
 }
 
 class _ManualPointsPageState extends State<ManualPointsPage> {
-  final _supabase = Supabase.instance.client;
   final _admin = AdminSupabase.client;
   List<Map<String, dynamic>> _users = [];
   Map<String, dynamic>? _selectedUser;
@@ -48,18 +47,21 @@ class _ManualPointsPageState extends State<ManualPointsPage> {
       _showError('Pilih user terlebih dahulu');
       return;
     }
-    if (_amountCtrl.text.trim().isEmpty || int.tryParse(_amountCtrl.text.trim()) == null) {
-      _showError('Masukkan jumlah poin yang valid');
+
+    // --- [TAHAP 1: BLOKIR INPUT MINUS DAN NOL] ---
+    final int? amount = int.tryParse(_amountCtrl.text.trim());
+    if (amount == null || amount <= 0) {
+      _showError('Masukkan jumlah poin yang valid (harus lebih dari 0)');
       return;
     }
+
     if (_reasonCtrl.text.trim().isEmpty) {
       _showError('Alasan wajib diisi');
       return;
     }
 
-    final int amount = int.parse(_amountCtrl.text.trim());
-    final int finalAmount = _isAdd ? amount : -amount;
     final String userName = _selectedUser!['full_name'] ?? 'User';
+    final String userId = _selectedUser!['id'];
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -103,20 +105,52 @@ class _ManualPointsPageState extends State<ManualPointsPage> {
     if (confirm != true) return;
 
     setState(() => _isSaving = true);
+    
     try {
-      // Update points
-      final currentPoints = (_selectedUser!['points'] as num?)?.toInt() ?? 0;
-      final newPoints = currentPoints + finalAmount;
+      // --- [TAHAP 3: AMBIL DATA FRESH UNTUK MENCEGAH TABRAKAN DATA] ---
+      final freshData = await _admin
+          .from('profiles')
+          .select('points')
+          .eq('id', userId)
+          .single();
 
+      final int currentPoints = (freshData['points'] as num?)?.toInt() ?? 0;
+
+      // --- [TAHAP 2: KALKULASI & SINKRONISASI RIWAYAT] ---
+      int actualChange = 0;
+      int newPoints = currentPoints;
+
+      if (_isAdd) {
+        actualChange = amount;
+        newPoints = currentPoints + amount;
+      } else {
+        // Cek jika mencoba mengurangi tapi saldo sudah 0
+        if (currentPoints <= 0) {
+          _showError('Saldo $userName sudah 0. Tidak bisa dikurangi lagi.');
+          setState(() => _isSaving = false);
+          return;
+        }
+
+        // Cek apakah potongan melebihi saldo yang ada
+        if (amount > currentPoints) {
+          actualChange = -currentPoints; // Potong sisa saldo saja
+          newPoints = 0;
+        } else {
+          actualChange = -amount;
+          newPoints = currentPoints - amount;
+        }
+      }
+
+      // 1. Update poin ke profiles
       await _admin.from('profiles').update({
-        'points': newPoints < 0 ? 0 : newPoints,
+        'points': newPoints,
         'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', _selectedUser!['id']);
+      }).eq('id', userId);
 
-      // Insert history
+      // 2. Insert history menggunakan actualChange (Sangat aman saat diaudit)
       await _admin.from('point_history').insert({
-        'user_id': _selectedUser!['id'],
-        'amount': finalAmount,
+        'user_id': userId,
+        'amount': actualChange, 
         'description': '${_isAdd ? "Tambah" : "Kurang"} manual: ${_reasonCtrl.text.trim()}',
         'reference_type': 'MANUAL',
         'reference_id': 'MANUAL-${DateTime.now().millisecondsSinceEpoch}',
@@ -125,7 +159,7 @@ class _ManualPointsPageState extends State<ManualPointsPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${_isAdd ? "+" : "-"}$amount poin untuk $userName'),
+            content: Text('${actualChange > 0 ? "+" : ""}$actualChange poin untuk $userName'),
             backgroundColor: const Color(0xFF10B981),
           ),
         );

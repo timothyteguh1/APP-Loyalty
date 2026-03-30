@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../admin_supabase.dart'; // [UPDATE]: Import AdminSupabase
 import 'kyc_detail_page.dart';
 
 class KycListPage extends StatefulWidget {
@@ -10,7 +11,7 @@ class KycListPage extends StatefulWidget {
 }
 
 class _KycListPageState extends State<KycListPage> with SingleTickerProviderStateMixin {
-  final _supabase = Supabase.instance.client;
+  final _admin = AdminSupabase.client; // [UPDATE]: Gunakan AdminSupabase
   late TabController _tabController;
   final _searchController = TextEditingController();
   String _searchQuery = '';
@@ -37,7 +38,8 @@ class _KycListPageState extends State<KycListPage> with SingleTickerProviderStat
   Future<void> _fetchProfiles() async {
     setState(() => _isLoading = true);
     try {
-      final data = await _supabase
+      // [UPDATE]: Gunakan _admin.from bukan _supabase.from
+      final data = await _admin
           .from('profiles')
           .select()
           .order('created_at', ascending: false);

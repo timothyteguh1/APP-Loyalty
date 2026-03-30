@@ -26,29 +26,27 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> _banners = [];
   bool _isLoadingBanner = true;
 
+  // --- [UPDATE OPTIMASI: DEKLARASI STREAM DI SINI] ---
+  // Ini mencegah aplikasi Anda melakukan query database berulang-ulang
+  // setiap kali banner promo bergeser (mencegah HP cepat panas dan memori penuh).
+  late final Stream<List<Map<String, dynamic>>> _pointsStream;
+  late final Stream<AuthState> _authStateStream;
+
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
-    _fetchBanners();
+    
+    // --- [UPDATE OPTIMASI: INISIALISASI STREAM HANYA 1x] ---
+    final userId = _supabase.auth.currentUser?.id ?? '';
+    _pointsStream = _supabase
+        .from('profiles')
+        .stream(primaryKey: ['id'])
+        .eq('id', userId);
+        
+    _authStateStream = _supabase.auth.onAuthStateChange;
 
-    // SnackBar Welcome (Saya matikan sementara biar gak ganggu tes poin, aktifkan jika mau)
-    /*
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        final user = _supabase.auth.currentUser;
-        final name = user?.userMetadata?['full_name'] ?? 'User';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Selamat Datang Kembali, $name!"),
-            backgroundColor: const Color.fromARGB(255, 41, 196, 44),
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(20),
-          ),
-        );
-      }
-    });
-    */
+    _fetchBanners();
   }
 
   @override
@@ -147,17 +145,9 @@ class _HomePageState extends State<HomePage> {
           children: [
             _buildNavItem(icon: Icons.home_filled, label: "Home", index: 0),
             _buildNavItem(icon: Icons.card_giftcard, label: "Reward", index: 1),
-            const SizedBox(width: 48),
-            _buildNavItem(
-              icon: Icons.history_outlined,
-              label: "History",
-              index: 3,
-            ),
-            _buildNavItem(
-              icon: Icons.person_outline,
-              label: "Account",
-              index: 4,
-            ),
+            const SizedBox(width: 48), // Spasi untuk floating button
+            _buildNavItem(icon: Icons.history_outlined, label: "History", index: 3),
+            _buildNavItem(icon: Icons.person_outline, label: "Account", index: 4),
           ],
         ),
       ),
@@ -212,13 +202,12 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // STREAM NAMA USER
+                    // MENGGUNAKAN STREAM YANG SUDAH DIOPTIMASI
                     StreamBuilder<AuthState>(
-                      stream: _supabase.auth.onAuthStateChange,
+                      stream: _authStateStream,
                       builder: (context, snapshot) {
                         final user = _supabase.auth.currentUser;
-                        final name =
-                            user?.userMetadata?['full_name'] ?? 'User Upsol';
+                        final name = user?.userMetadata?['full_name'] ?? 'User Upsol';
 
                         return Text(
                           "Selamat datang, $name",
@@ -254,18 +243,15 @@ class _HomePageState extends State<HomePage> {
                   ),
                   child: Column(
                     children: [
-                      // STREAM AVATAR & EMAIL
+                      // MENGGUNAKAN STREAM YANG SUDAH DIOPTIMASI
                       StreamBuilder<AuthState>(
-                        stream: _supabase.auth.onAuthStateChange,
+                        stream: _authStateStream,
                         builder: (context, snapshot) {
                           final user = _supabase.auth.currentUser;
-                          final name =
-                              user?.userMetadata?['full_name'] ?? 'User Upsol';
+                          final name = user?.userMetadata?['full_name'] ?? 'User Upsol';
                           final email = user?.email ?? '-';
-                          final String? avatarUrl =
-                              user?.userMetadata?['avatar_url'];
-                          final bool hasAvatar =
-                              avatarUrl != null && avatarUrl.isNotEmpty;
+                          final String? avatarUrl = user?.userMetadata?['avatar_url'];
+                          final bool hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
 
                           return Row(
                             children: [
@@ -273,10 +259,8 @@ class _HomePageState extends State<HomePage> {
                                 radius: 24,
                                 backgroundColor: Colors.grey[200],
                                 backgroundImage: hasAvatar
-                                    ? NetworkImage(avatarUrl!)
-                                    : const NetworkImage(
-                                        'https://i.pravatar.cc/150?img=12',
-                                      ),
+                                    ? NetworkImage(avatarUrl)
+                                    : const NetworkImage('https://i.pravatar.cc/150?img=12'),
                                 onBackgroundImageError: (_, __) {},
                               ),
                               const SizedBox(width: 12),
@@ -286,17 +270,11 @@ class _HomePageState extends State<HomePage> {
                                   children: [
                                     Text(
                                       name,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                      ),
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                                     ),
                                     Text(
                                       email,
-                                      style: TextStyle(
-                                        color: Colors.grey[600],
-                                        fontSize: 12,
-                                      ),
+                                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
@@ -305,8 +283,7 @@ class _HomePageState extends State<HomePage> {
                               Image.asset(
                                 'assets/images/logo.png',
                                 height: 30,
-                                errorBuilder: (c, e, s) =>
-                                    const Icon(Icons.star, color: Colors.amber),
+                                errorBuilder: (c, e, s) => const Icon(Icons.star, color: Colors.amber),
                               ),
                             ],
                           );
@@ -317,7 +294,7 @@ class _HomePageState extends State<HomePage> {
                       const Divider(),
                       const SizedBox(height: 12),
 
-                      // --- [BAGIAN POIN REALTIME (DARI DATABASE)] ---
+                      // --- [BAGIAN POIN REALTIME MENGGUNAKAN STREAM OPTIMASI] ---
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -326,32 +303,20 @@ class _HomePageState extends State<HomePage> {
                             children: [
                               Text(
                                 "Poin anda saat ini",
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontSize: 12,
-                                ),
+                                style: TextStyle(color: Colors.grey[600], fontSize: 12),
                               ),
                               const SizedBox(height: 4),
 
-                              // STREAM POIN DARI TABEL PROFILES
                               StreamBuilder<List<Map<String, dynamic>>>(
-                                stream: _supabase
-                                    .from('profiles')
-                                    .stream(primaryKey: ['id'])
-                                    .eq(
-                                      'id',
-                                      _supabase.auth.currentUser?.id ?? '',
-                                    ),
+                                stream: _pointsStream, // MENGGUNAKAN VARIABEL STREAM, BUKAN BIKIN BARU
                                 builder: (context, snapshot) {
                                   String points = "0"; // Default 0
-                                  if (snapshot.hasData &&
-                                      snapshot.data!.isNotEmpty) {
-                                    points = snapshot.data![0]['points']
-                                        .toString();
+                                  if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+                                    points = snapshot.data![0]['points'].toString();
                                   }
 
                                   return Text(
-                                    "$points Points", // Tampilkan Poin Asli
+                                    "$points Points",
                                     style: const TextStyle(
                                       fontSize: 24,
                                       fontWeight: FontWeight.w900,
@@ -370,10 +335,7 @@ class _HomePageState extends State<HomePage> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 10,
-                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                             ),
                             child: const Text("Redeem"),
                           ),
@@ -387,7 +349,7 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 110),
 
-          // BANNER PROMO (TETAP SAMA)
+          // BANNER PROMO
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(
@@ -403,9 +365,7 @@ class _HomePageState extends State<HomePage> {
                         aspectRatio: 16 / 9,
                         child: Container(
                           color: Colors.grey[200],
-                          child: const Center(
-                            child: CircularProgressIndicator(),
-                          ),
+                          child: const Center(child: CircularProgressIndicator()),
                         ),
                       )
                     : _banners.isEmpty
@@ -426,16 +386,13 @@ class _HomePageState extends State<HomePage> {
                               itemCount: _banners.length,
                               itemBuilder: (context, index) {
                                 return Container(
-                                  margin: const EdgeInsets.symmetric(
-                                    horizontal: 0,
-                                  ),
+                                  margin: const EdgeInsets.symmetric(horizontal: 0),
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(16),
                                     child: Image.network(
                                       _banners[index]['image_url'] ?? '',
                                       fit: BoxFit.cover,
-                                      errorBuilder: (ctx, err, stack) =>
-                                          const Icon(Icons.broken_image),
+                                      errorBuilder: (ctx, err, stack) => const Icon(Icons.broken_image),
                                     ),
                                   ),
                                 );
@@ -449,9 +406,7 @@ class _HomePageState extends State<HomePage> {
                               _banners.length,
                               (index) => AnimatedContainer(
                                 duration: const Duration(milliseconds: 300),
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
+                                margin: const EdgeInsets.symmetric(horizontal: 4),
                                 width: _currentBannerIndex == index ? 24 : 8,
                                 height: 8,
                                 decoration: BoxDecoration(

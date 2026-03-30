@@ -31,7 +31,6 @@ class _ScanQrPageState extends State<ScanQrPage> {
     showLoading(context);
 
     try {
-      // Tunggu sebentar agar loading screen muncul sempurna di web
       await Future.delayed(const Duration(milliseconds: 500));
 
       final BarcodeCapture? capture = await _cameraController.analyzeImage(image.path);
@@ -41,9 +40,12 @@ class _ScanQrPageState extends State<ScanQrPage> {
 
       if (capture != null && capture.barcodes.isNotEmpty) {
         final String? code = capture.barcodes.first.rawValue;
-        if (code != null) {
+        if (code != null && code.trim().isNotEmpty) {
           setState(() => _debugScanResult = "Terbaca dari Upload: $code");
           _processQrCode(code); 
+        } else {
+          _showError("QR Code kosong atau tidak valid.");
+          setState(() => _isProcessing = false);
         }
       } else {
         _showError("QR Code tidak terdeteksi pada gambar ini.");
@@ -52,7 +54,7 @@ class _ScanQrPageState extends State<ScanQrPage> {
     } catch (e) {
       if (!mounted) return;
       hideLoading(context);
-      _showError("Gagal membaca gambar. Gunakan gambar PNG/JPG yang tajam.");
+      _showError("Gagal membaca gambar. Pastikan gambar tajam.");
       setState(() => _isProcessing = false);
     }
   }
@@ -93,7 +95,8 @@ class _ScanQrPageState extends State<ScanQrPage> {
         await showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (context) => AlertDialog(
+          // Menggunakan dialogContext agar pop() tidak salah sasaran
+          builder: (dialogContext) => AlertDialog(
             title: const Column(
               children: [
                 Icon(Icons.check_circle, color: Colors.green, size: 60),
@@ -106,8 +109,8 @@ class _ScanQrPageState extends State<ScanQrPage> {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD32F2F)),
                 onPressed: () {
-                  Navigator.pop(context); 
-                  Navigator.pop(context); 
+                  Navigator.pop(dialogContext); // 1. Tutup Dialog
+                  Navigator.pop(context);       // 2. Kembali ke halaman Home
                 },
                 child: const Text("OK", style: TextStyle(color: Colors.white)),
               )
@@ -115,16 +118,26 @@ class _ScanQrPageState extends State<ScanQrPage> {
           ),
         );
       } else {
-        _showError(response['message']); // Misal: "Kode sudah terpakai"
-        _cameraController.start();
-        setState(() => _isProcessing = false);
+        _showError(response['message'] ?? "QR Code ditolak."); 
+        
+        // JEDA ANTI-SPAM: Tunggu 2 detik sebelum kamera aktif lagi
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) {
+          _cameraController.start();
+          setState(() => _isProcessing = false);
+        }
       }
 
     } catch (e) {
       if (mounted) hideLoading(context);
       _showError("Terjadi kesalahan sistem database.");
-      _cameraController.start();
-      setState(() => _isProcessing = false);
+      
+      // JEDA ANTI-SPAM
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) {
+        _cameraController.start();
+        setState(() => _isProcessing = false);
+      }
     }
   }
 
@@ -133,18 +146,21 @@ class _ScanQrPageState extends State<ScanQrPage> {
     final TextEditingController inputController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text("Input Manual QR"),
         content: TextField(
           controller: inputController,
           decoration: const InputDecoration(hintText: "Contoh: UPSOL-TEST-50"),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Batal")),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext), 
+            child: const Text("Batal")
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD32F2F)),
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext); // Tutup dialog input dulu
               if (inputController.text.isNotEmpty) {
                 _processQrCode(inputController.text.trim());
               }
@@ -159,7 +175,11 @@ class _ScanQrPageState extends State<ScanQrPage> {
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red, duration: const Duration(seconds: 3)),
+      SnackBar(
+        content: Text(message), 
+        backgroundColor: Colors.red, 
+        duration: const Duration(seconds: 3)
+      ),
     );
   }
 

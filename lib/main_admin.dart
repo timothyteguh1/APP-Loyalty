@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // 1. Import dotenv
+
 import 'admin/admin_auth/admin_login_page.dart';
 import 'admin/dashboard/admin_home_page.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 2. Load file .env sebelum inisialisasi Supabase
+  await dotenv.load(fileName: ".env");
+
+  // 3. Inisialisasi Supabase khusus Admin
   await Supabase.initialize(
-    url: 'https://gzfdgfughmhjgbkdzotn.supabase.co',
-    // GANTI DENGAN SERVICE_ROLE KEY (JWT panjang, bukan sb_secret_)
-    // Ambil dari: Supabase Dashboard > Settings > API > service_role (secret)
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd6ZmRnZnVnaG1oamdia2R6b3RuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTIzNTAxOSwiZXhwIjoyMDg2ODExMDE5fQ.X-IN6EELfWB1jaRDDGrgn5i8HZxx9S7m3a8ZnHmpXc4',
+    url: dotenv.env['SUPABASE_URL']!,
+    // Karena ini untuk Admin, kita gunakan SERVICE_ROLE yang ada di .env
+    anonKey: dotenv.env['SUPABASE_SERVICE_ROLE']!, 
   );
 
   runApp(const UpsolAdminApp());

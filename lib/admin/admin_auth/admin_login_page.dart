@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../admin_supabase.dart'; // [UPDATE]: Import AdminSupabase
 import '../dashboard/admin_home_page.dart';
 
 class AdminLoginPage extends StatefulWidget {
@@ -121,7 +122,8 @@ class _AdminLoginPageState extends State<AdminLoginPage>
         password: _passwordController.text.trim(),
       );
 
-      final adminEmailsData = await _supabase
+      // [UPDATE]: Gunakan AdminSupabase untuk bypass RLS saat mengecek app_config
+      final adminEmailsData = await AdminSupabase.client
           .from('app_config')
           .select('value')
           .eq('key', 'admin_emails')

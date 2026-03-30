@@ -3,6 +3,10 @@
 <plist version="1.0">
 <dict>
 	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Aplikasi butuh akses galeri untuk mengunggah gambar banner dan hadiah.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Aplikasi butuh akses kamera untuk memotret gambar.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Aplikasi membutuhkan akses galeri untuk mengganti foto profil.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Aplikasi membutuhkan akses kamera untuk mengambil foto profil.</string>

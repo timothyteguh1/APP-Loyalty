@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import '../admin_supabase.dart';
 
 class BannersManagePage extends StatefulWidget {
@@ -10,7 +12,6 @@ class BannersManagePage extends StatefulWidget {
 }
 
 class _BannersManagePageState extends State<BannersManagePage> {
-    final _supabase = Supabase.instance.client;
   final _admin = AdminSupabase.client;
   List<Map<String, dynamic>> _banners = [];
   bool _isLoading = true;
@@ -70,6 +71,13 @@ class _BannersManagePageState extends State<BannersManagePage> {
     );
     if (confirm != true) return;
     try {
+      // Auto-delete file gambar di Storage jika ada
+      final imageUrl = banner['image_url'] as String?;
+      if (imageUrl != null && imageUrl.contains('upsol-assets')) {
+        final fileName = imageUrl.split('/').last;
+        await _admin.storage.from('upsol-assets').remove([fileName]);
+      }
+
       await _admin.from('banners').delete().eq('id', banner['id']);
       _fetchBanners();
     } catch (e) {
@@ -79,7 +87,8 @@ class _BannersManagePageState extends State<BannersManagePage> {
 
   Future<void> _showBannerForm({Map<String, dynamic>? existing}) async {
     final titleCtrl = TextEditingController(text: existing?['title'] ?? '');
-    final imageCtrl = TextEditingController(text: existing?['image_url'] ?? '');
+    File? selectedImage; // Menyimpan file gambar baru
+    String? existingImageUrl = existing?['image_url'];
     bool isSaving = false;
 
     final result = await showModalBottomSheet<bool>(
@@ -88,7 +97,7 @@ class _BannersManagePageState extends State<BannersManagePage> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModalState) => Container(
-          height: MediaQuery.of(ctx).size.height * 0.55,
+          height: MediaQuery.of(ctx).size.height * 0.7,
           decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
           child: Column(
             children: [
@@ -111,31 +120,80 @@ class _BannersManagePageState extends State<BannersManagePage> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     _formField('Judul Banner', titleCtrl, 'Contoh: Promo Akhir Tahun'),
                     const SizedBox(height: 16),
-                    _formField('URL Gambar *', imageCtrl, 'https://...'),
-                    const SizedBox(height: 12),
-                    if (imageCtrl.text.isNotEmpty)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.network(imageCtrl.text, height: 100, width: double.infinity, fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const SizedBox()),
+                    
+                    // --- [UI UPLOAD GAMBAR] ---
+                    const Text('Gambar Banner *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: () async {
+                        final picker = ImagePicker();
+                        final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+                        if (pickedFile != null) {
+                          setModalState(() => selectedImage = File(pickedFile.path));
+                        }
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        height: 160,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9FAFB),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!, style: BorderStyle.solid),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: selectedImage != null
+                              ? Image.file(selectedImage!, fit: BoxFit.cover)
+                              : existingImageUrl != null && existingImageUrl!.isNotEmpty
+                                  ? Image.network(existingImageUrl!, fit: BoxFit.cover)
+                                  : Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.add_photo_alternate_rounded, size: 40, color: Colors.grey[400]),
+                                        const SizedBox(height: 8),
+                                        Text('Tap untuk pilih gambar', style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+                                      ],
+                                    ),
+                        ),
                       ),
+                    ),
                     const SizedBox(height: 24),
+
+                    // --- [TOMBOL SIMPAN] ---
                     SizedBox(
                       width: double.infinity, height: 52,
                       child: ElevatedButton(
                         onPressed: isSaving ? null : () async {
-                          if (imageCtrl.text.trim().isEmpty) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('URL gambar wajib diisi'), backgroundColor: Color(0xFFEF4444)));
+                          if (selectedImage == null && (existingImageUrl == null || existingImageUrl!.isEmpty)) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Gambar banner wajib dipilih'), backgroundColor: Color(0xFFEF4444)));
                             return;
                           }
+
                           setModalState(() => isSaving = true);
                           try {
-                            final data = {'title': titleCtrl.text.trim().isEmpty ? null : titleCtrl.text.trim(), 'image_url': imageCtrl.text.trim(), 'is_active': true};
+                            String finalImageUrl = existingImageUrl ?? '';
+
+                            // Jika admin memilih gambar baru, upload ke Storage
+                            if (selectedImage != null) {
+                              final ext = selectedImage!.path.split('.').last;
+                              final fileName = 'banner_${DateTime.now().millisecondsSinceEpoch}.$ext';
+                              
+                              await _admin.storage.from('upsol-assets').upload(fileName, selectedImage!);
+                              finalImageUrl = _admin.storage.from('upsol-assets').getPublicUrl(fileName);
+                            }
+
+                            final data = {
+                              'title': titleCtrl.text.trim().isEmpty ? null : titleCtrl.text.trim(), 
+                              'image_url': finalImageUrl, 
+                              'is_active': true
+                            };
+
                             if (existing != null) {
                               await _admin.from('banners').update(data).eq('id', existing['id']);
                             } else {
                               await _admin.from('banners').insert(data);
                             }
+
                             if (ctx.mounted) Navigator.pop(ctx, true);
                           } catch (e) {
                             setModalState(() => isSaving = false);

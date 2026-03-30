@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // Import dotenv
 
-// Import sesuai struktur folder di project-mu
 import 'features/auth/login_page.dart';
 import 'features/home/home_page.dart';
 
-void main() async {
-  // 1. Pastikan binding Flutter sudah siap
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 2. Inisialisasi Supabase dengan Key kamu
+  // Load file .env
+  await dotenv.load(fileName: ".env");
+
+  // Inisialisasi Supabase menggunakan variabel dari .env
   await Supabase.initialize(
-    url: 'https://gzfdgfughmhjgbkdzotn.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd6ZmRnZnVnaG1oamdia2R6b3RuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyMzUwMTksImV4cCI6MjA4NjgxMTAxOX0.jjI5hOOx1SSByo_Il8ceMbi944uEY59JamP7_87A2Y4',
+    url: dotenv.env['SUPABASE_URL']!,
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
 
   runApp(const MyApp());

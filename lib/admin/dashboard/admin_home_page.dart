@@ -4,6 +4,7 @@ import 'package:upsol_loyalty/admin/manage_conversion/manage_menu_page.dart';
 import '../admin_auth/admin_login_page.dart';
 import '../kyc_approval/kyc_list_page.dart';
 import '../admin_supabase.dart';
+import '../reports/reports_page.dart'; // [TAMBAHAN]: Import halaman laporan yang baru dibuat
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -220,7 +221,7 @@ class _AdminHomePageState extends State<AdminHomePage> with TickerProviderStateM
         _DashboardTab(supabase: _supabase),
         const KycListPage(),
         const ManageMenuPage(),
-        _buildPlaceholder('Laporan', Icons.insights_rounded, 'Penukaran & Histori Faktur'),
+        const _LaporanLauncher(), // [UPDATE]: Menampilkan tombol Launcher Laporan
       ],
     );
   }
@@ -262,25 +263,60 @@ class _AdminHomePageState extends State<AdminHomePage> with TickerProviderStateM
       ),
     );
   }
+}
 
-  Widget _buildPlaceholder(String title, IconData icon, String subtitle) {
+// ======= WIDGET BARU: LAUNCHER LAPORAN =======
+class _LaporanLauncher extends StatelessWidget {
+  const _LaporanLauncher();
+
+  @override
+  Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 72, height: 72,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEF2F2),
-              borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.all(28.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80, height: 80,
+              decoration: BoxDecoration(
+                color: const Color(0xFFB71C1C).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Icon(Icons.analytics_rounded, size: 36, color: Color(0xFFB71C1C)),
             ),
-            child: Icon(icon, size: 32, color: const Color(0xFFB71C1C)),
-          ),
-          const SizedBox(height: 16),
-          Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(subtitle, style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 13)),
-        ],
+            const SizedBox(height: 24),
+            const Text(
+              'Pusat Laporan & Analytics',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Akses rekapitulasi poin masuk, riwayat penukaran hadiah per barang, serta menu khusus Tutup Buku (Cut Off) Tahunan.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF6B7280), fontSize: 13, height: 1.5),
+            ),
+            const SizedBox(height: 40),
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  // Membuka ReportsPage secara Full Screen
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportsPage()));
+                },
+                icon: const Icon(Icons.open_in_new_rounded, size: 20),
+                label: const Text('Buka Laporan Lengkap', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFB71C1C),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -311,7 +347,6 @@ class _DashboardTabState extends State<_DashboardTab> {
   Future<void> _fetchAll() async {
     setState(() => _isLoading = true);
     try {
-      // Perubahan diterapkan di sini: mengganti widget.supabase.from menjadi _admin.from
       final approved = await _admin.from('profiles').select('id').eq('approval_status', 'APPROVED');
       final pending = await _admin.from('profiles').select('id').eq('approval_status', 'PENDING');
       final pointsData = await _admin.from('profiles').select('points');
@@ -319,7 +354,7 @@ class _DashboardTabState extends State<_DashboardTab> {
       for (var p in pointsData) {
         totalPoints += (p['points'] as num?)?.toInt() ?? 0;
       }
-      final rewards = await _admin.from('user_rewards').select('id');
+      final rewards = await _admin.from('rewards').select('id'); // Update dari user_rewards ke rewards (sesuai skema standar)
 
       final activities = await _admin
           .from('point_history')
@@ -458,7 +493,7 @@ class _DashboardTabState extends State<_DashboardTab> {
                   child: _AnimEntry(
                     delay: 250,
                     child: _StatCard(
-                      label: 'Hadiah Diklaim',
+                      label: 'Item Hadiah',
                       value: _isLoading ? '-' : '${_stats['rewards'] ?? 0}',
                       icon: Icons.card_giftcard_rounded,
                       color: const Color(0xFF10B981),
