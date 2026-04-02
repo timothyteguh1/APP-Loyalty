@@ -6,7 +6,8 @@ import 'package:upsol_loyalty/features/reward/reward_page.dart';
 import '../../controllers/auth_controller.dart';
 import '../account/account_page.dart';
 import '../scan/scan_qr_page.dart';
-import '../../utils/ui_helpers.dart'; // Biar bisa pake navigateTo
+import '../reward/detail_reward_page.dart';
+import '../../utils/ui_helpers.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -24,29 +25,30 @@ class _HomePageState extends State<HomePage> {
   late PageController _pageController;
   Timer? _timer;
   List<Map<String, dynamic>> _banners = [];
+  List<Map<String, dynamic>> _bestDeals = [];
   bool _isLoadingBanner = true;
+  bool _isLoadingDeals = true;
 
-  // --- [UPDATE OPTIMASI: DEKLARASI STREAM DI SINI] ---
-  // Ini mencegah aplikasi Anda melakukan query database berulang-ulang
-  // setiap kali banner promo bergeser (mencegah HP cepat panas dan memori penuh).
-  late final Stream<List<Map<String, dynamic>>> _pointsStream;
-  late final Stream<AuthState> _authStateStream;
+  // Stream optimasi (init 1x, JANGAN buat ulang)
+  Stream<List<Map<String, dynamic>>>? _pointsStream;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
-    
-    // --- [UPDATE OPTIMASI: INISIALISASI STREAM HANYA 1x] ---
-    final userId = _supabase.auth.currentUser?.id ?? '';
-    _pointsStream = _supabase
-        .from('profiles')
-        .stream(primaryKey: ['id'])
-        .eq('id', userId);
-        
-    _authStateStream = _supabase.auth.onAuthStateChange;
-
+    _initStreams();
     _fetchBanners();
+    _fetchBestDeals();
+  }
+
+  void _initStreams() {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId != null && userId.isNotEmpty) {
+      _pointsStream = _supabase
+          .from('profiles')
+          .stream(primaryKey: ['id'])
+          .eq('id', userId);
+    }
   }
 
   @override
@@ -58,7 +60,11 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _fetchBanners() async {
     try {
-      final data = await _supabase.from('banners').select();
+      final data = await _supabase
+          .from('banners')
+          .select()
+          .eq('is_active', true)
+          .order('created_at', ascending: false);
       if (mounted) {
         setState(() {
           _banners = List<Map<String, dynamic>>.from(data);
@@ -71,9 +77,30 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _fetchBestDeals() async {
+    try {
+      final data = await _supabase
+          .from('rewards')
+          .select()
+          .eq('is_active', true)
+          .gt('stock', 0)
+          .order('points_required', ascending: true)
+          .limit(3);
+      if (mounted) {
+        setState(() {
+          _bestDeals = List<Map<String, dynamic>>.from(data);
+          _isLoadingDeals = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingDeals = false);
+    }
+  }
+
   void _startAutoSlide() {
     if (_banners.length <= 1) return;
     _timer = Timer.periodic(const Duration(seconds: 4), (Timer timer) {
+      if (!mounted) { timer.cancel(); return; }
       if (_currentBannerIndex < _banners.length - 1) {
         _currentBannerIndex++;
       } else {
@@ -91,16 +118,11 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildBody() {
     switch (_selectedIndex) {
-      case 0:
-        return _buildHomeContent();
-      case 1:
-        return const RewardPage(); // Pastikan sudah di-import
-      case 3:
-        return const HistoryPage();
-      case 4:
-        return const AccountPage();
-      default:
-        return const Center(child: Text("Fitur dalam pengembangan"));
+      case 0: return _buildHomeContent();
+      case 1: return const RewardPage();
+      case 3: return const HistoryPage();
+      case 4: return const AccountPage();
+      default: return const Center(child: Text("Fitur dalam pengembangan"));
     }
   }
 
@@ -109,20 +131,19 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       resizeToAvoidBottomInset: false,
-      extendBody: true,
+      // [FIX 1] Hapus extendBody: true — penyebab Scaffold.geometryOf() error di desktop
+      // extendBody: true,  ← DIHAPUS
 
       body: _buildBody(),
 
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      // [FIX 2] Ganti centerFloat → centerDocked agar FAB tidak crash layout di desktop
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
 
       floatingActionButton: SizedBox(
         height: 65,
         width: 65,
         child: FloatingActionButton(
-          onPressed: () {
-            // Pindah ke Halaman Scan dengan animasi
-            navigateTo(context, const ScanQrPage());
-          },
+          onPressed: () => navigateTo(context, const ScanQrPage()),
           backgroundColor: const Color(0xFFD32F2F),
           shape: const CircleBorder(),
           elevation: 4,
@@ -140,12 +161,15 @@ class _HomePageState extends State<HomePage> {
         height: 70,
         color: Colors.white,
         surfaceTintColor: Colors.white,
+        // [FIX 3] Tambahkan notchMargin dan shape agar FAB tidak overlap
+        notchMargin: 6,
+        shape: const CircularNotchedRectangle(),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _buildNavItem(icon: Icons.home_filled, label: "Home", index: 0),
             _buildNavItem(icon: Icons.card_giftcard, label: "Reward", index: 1),
-            const SizedBox(width: 48), // Spasi untuk floating button
+            const SizedBox(width: 48), // Spasi untuk FAB
             _buildNavItem(icon: Icons.history_outlined, label: "History", index: 3),
             _buildNavItem(icon: Icons.person_outline, label: "Account", index: 4),
           ],
@@ -202,13 +226,12 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // MENGGUNAKAN STREAM YANG SUDAH DIOPTIMASI
-                    StreamBuilder<AuthState>(
-                      stream: _authStateStream,
-                      builder: (context, snapshot) {
+                    // [FIX 4] Ambil nama langsung, tanpa StreamBuilder AuthState 
+                    // (menghindari rebuild berlebihan saat auth state berubah)
+                    Builder(
+                      builder: (context) {
                         final user = _supabase.auth.currentUser;
                         final name = user?.userMetadata?['full_name'] ?? 'User Upsol';
-
                         return Text(
                           "Selamat datang, $name",
                           style: const TextStyle(
@@ -243,10 +266,9 @@ class _HomePageState extends State<HomePage> {
                   ),
                   child: Column(
                     children: [
-                      // MENGGUNAKAN STREAM YANG SUDAH DIOPTIMASI
-                      StreamBuilder<AuthState>(
-                        stream: _authStateStream,
-                        builder: (context, snapshot) {
+                      // [FIX 5] Avatar row tanpa AuthState stream (data statis)
+                      Builder(
+                        builder: (context) {
                           final user = _supabase.auth.currentUser;
                           final name = user?.userMetadata?['full_name'] ?? 'User Upsol';
                           final email = user?.email ?? '-';
@@ -258,33 +280,26 @@ class _HomePageState extends State<HomePage> {
                               CircleAvatar(
                                 radius: 24,
                                 backgroundColor: Colors.grey[200],
-                                backgroundImage: hasAvatar
-                                    ? NetworkImage(avatarUrl)
-                                    : const NetworkImage('https://i.pravatar.cc/150?img=12'),
-                                onBackgroundImageError: (_, __) {},
+                                backgroundImage: hasAvatar ? NetworkImage(avatarUrl) : null,
+                                child: !hasAvatar
+                                    ? Text(
+                                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFFD32F2F)),
+                                      )
+                                    : null,
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      name,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                    ),
-                                    Text(
-                                      email,
-                                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                                    Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    Text(email, style: TextStyle(color: Colors.grey[600], fontSize: 12), overflow: TextOverflow.ellipsis),
                                   ],
                                 ),
                               ),
-                              Image.asset(
-                                'assets/images/logo.png',
-                                height: 30,
-                                errorBuilder: (c, e, s) => const Icon(Icons.star, color: Colors.amber),
-                              ),
+                              Image.asset('assets/images/logo.png', height: 30,
+                                  errorBuilder: (c, e, s) => const Icon(Icons.star, color: Colors.amber)),
                             ],
                           );
                         },
@@ -294,47 +309,47 @@ class _HomePageState extends State<HomePage> {
                       const Divider(),
                       const SizedBox(height: 12),
 
-                      // --- [BAGIAN POIN REALTIME MENGGUNAKAN STREAM OPTIMASI] ---
+                      // POIN REALTIME
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                "Poin anda saat ini",
-                                style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                              ),
+                              Text("Poin anda saat ini", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
                               const SizedBox(height: 4),
-
-                              StreamBuilder<List<Map<String, dynamic>>>(
-                                stream: _pointsStream, // MENGGUNAKAN VARIABEL STREAM, BUKAN BIKIN BARU
-                                builder: (context, snapshot) {
-                                  String points = "0"; // Default 0
-                                  if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-                                    points = snapshot.data![0]['points'].toString();
-                                  }
-
-                                  return Text(
-                                    "$points Points",
-                                    style: const TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w900,
-                                      color: Colors.black,
-                                    ),
-                                  );
-                                },
-                              ),
+                              // [FIX 6] Stream dengan error handler & null safety
+                              _pointsStream != null
+                                  ? StreamBuilder<List<Map<String, dynamic>>>(
+                                      stream: _pointsStream,
+                                      builder: (context, snapshot) {
+                                        if (snapshot.hasError) {
+                                          return const Text("0 Points", style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black));
+                                        }
+                                        String points = "0";
+                                        try {
+                                          if (snapshot.hasData && snapshot.data != null && snapshot.data!.isNotEmpty) {
+                                            final raw = snapshot.data![0]['points'];
+                                            points = (raw ?? 0).toString();
+                                          }
+                                        } catch (_) {
+                                          points = "0";
+                                        }
+                                        return Text(
+                                          "$points Points",
+                                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black),
+                                        );
+                                      },
+                                    )
+                                  : const Text("0 Points", style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black)),
                             ],
                           ),
                           ElevatedButton(
-                            onPressed: () {},
+                            onPressed: () => setState(() => _selectedIndex = 1),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFD32F2F),
                               foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                             ),
                             child: const Text("Redeem"),
@@ -355,76 +370,171 @@ class _HomePageState extends State<HomePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  "Penawaran Menarik",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                const Text("Penawaran Menarik", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
                 _isLoadingBanner
                     ? AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: Container(
-                          color: Colors.grey[200],
-                          child: const Center(child: CircularProgressIndicator()),
-                        ),
+                        child: Container(color: Colors.grey[200], child: const Center(child: CircularProgressIndicator())),
                       )
                     : _banners.isEmpty
-                    ? Container(
-                        height: 150,
-                        width: double.infinity,
-                        color: Colors.grey[200],
-                        child: const Center(child: Text("Belum ada promo")),
-                      )
-                    : Column(
-                        children: [
-                          AspectRatio(
-                            aspectRatio: 16 / 9,
-                            child: PageView.builder(
-                              controller: _pageController,
-                              onPageChanged: (index) =>
-                                  setState(() => _currentBannerIndex = index),
-                              itemCount: _banners.length,
-                              itemBuilder: (context, index) {
-                                return Container(
-                                  margin: const EdgeInsets.symmetric(horizontal: 0),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(16),
-                                    child: Image.network(
-                                      _banners[index]['image_url'] ?? '',
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (ctx, err, stack) => const Icon(Icons.broken_image),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: List.generate(
-                              _banners.length,
-                              (index) => AnimatedContainer(
-                                duration: const Duration(milliseconds: 300),
-                                margin: const EdgeInsets.symmetric(horizontal: 4),
-                                width: _currentBannerIndex == index ? 24 : 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: _currentBannerIndex == index
-                                      ? const Color(0xFFD32F2F)
-                                      : Colors.grey[300],
-                                  borderRadius: BorderRadius.circular(4),
+                        ? Container(
+                            height: 150, width: double.infinity,
+                            decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(16)),
+                            child: const Center(child: Text("Belum ada promo")),
+                          )
+                        : Column(
+                            children: [
+                              AspectRatio(
+                                aspectRatio: 16 / 9,
+                                child: PageView.builder(
+                                  controller: _pageController,
+                                  onPageChanged: (index) => setState(() => _currentBannerIndex = index),
+                                  itemCount: _banners.length,
+                                  itemBuilder: (context, index) {
+                                    return ClipRRect(
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: Image.network(
+                                        _banners[index]['image_url'] ?? '',
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Container(
+                                          color: Colors.grey[200],
+                                          child: const Center(child: Icon(Icons.broken_image)),
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 ),
                               ),
-                            ),
+                              const SizedBox(height: 12),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: List.generate(
+                                  _banners.length,
+                                  (index) => AnimatedContainer(
+                                    duration: const Duration(milliseconds: 300),
+                                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                                    width: _currentBannerIndex == index ? 24 : 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      color: _currentBannerIndex == index ? const Color(0xFFD32F2F) : Colors.grey[300],
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+
                 const SizedBox(height: 30),
+
+                // BEST DEALS - Dynamic
+                const Text("Best Deal", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+
+                _isLoadingDeals
+                    ? Container(
+                        width: double.infinity, padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                        child: const Center(child: CircularProgressIndicator(color: Color(0xFFD32F2F))),
+                      )
+                    : _bestDeals.isEmpty
+                        ? Container(
+                            width: double.infinity, padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                            child: const Text("Nantikan promo menarik segera!", style: TextStyle(color: Colors.grey)),
+                          )
+                        : Column(
+                            children: _bestDeals.map((item) => _buildBestDealCard(item)).toList(),
+                          ),
+
+                // Padding bawah agar tidak tertutup bottom nav
+                const SizedBox(height: 100),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBestDealCard(Map<String, dynamic> item) {
+    return GestureDetector(
+      onTap: () => navigateTo(context, DetailRewardPage(item: item)),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 15, offset: const Offset(0, 5)),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Image.asset('assets/images/logo.png', height: 20,
+                    errorBuilder: (c, e, s) => const Icon(Icons.local_offer, color: Colors.red, size: 20)),
+                const SizedBox(width: 8),
+                const Text("UPSOL OFFICIAL", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: item['type'] == 'VOUCHER' ? Colors.blue.withOpacity(0.1) : Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    item['type'] == 'VOUCHER' ? 'Voucher' : 'Produk',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+                        color: item['type'] == 'VOUCHER' ? Colors.blue : Colors.green),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              item['name'] ?? '-',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, height: 1.3),
+              maxLines: 2, overflow: TextOverflow.ellipsis,
+            ),
+            if (item['description'] != null && item['description'].toString().isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(item['description'], style: TextStyle(fontSize: 12, color: Colors.grey[600]), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(color: Colors.amber[50], shape: BoxShape.circle),
+                    child: const Icon(Icons.stars, color: Colors.amber, size: 18),
+                  ),
+                  const SizedBox(width: 8),
+                  Text("${item['points_required'] ?? 0}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                ]),
+                ElevatedButton(
+                  onPressed: () => navigateTo(context, DetailRewardPage(item: item)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFD32F2F),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                    elevation: 0,
+                  ),
+                  child: const Text("Klaim", style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,8 +1,10 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../utils/ui_helpers.dart'; 
+import '../../utils/ui_helpers.dart';
 
 class ScanQrPage extends StatefulWidget {
   const ScanQrPage({super.key});
@@ -12,20 +14,39 @@ class ScanQrPage extends StatefulWidget {
 }
 
 class _ScanQrPageState extends State<ScanQrPage> {
-  final MobileScannerController _cameraController = MobileScannerController(
-    formats: const [BarcodeFormat.qrCode], // Fokus QR saja agar ringan
-  );
+  // Hanya buat controller di platform mobile
+  MobileScannerController? _cameraController;
   final _supabase = Supabase.instance.client;
   bool _isProcessing = false;
-
   String _debugScanResult = "Arahkan QR atau Upload Gambar...";
 
-  // --- LOGIKA UPLOAD GAMBAR DARI LAPTOP/HP ---
+  // Cek platform support kamera
+  bool get _isMobilePlatform {
+    if (kIsWeb) return false;
+    try {
+      return Platform.isAndroid || Platform.isIOS;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Hanya init kamera di mobile
+    if (_isMobilePlatform) {
+      _cameraController = MobileScannerController(
+        formats: const [BarcodeFormat.qrCode],
+      );
+    }
+  }
+
+  // --- LOGIKA UPLOAD GAMBAR ---
   Future<void> _pickAndScanImage() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-    
-    if (image == null) return; 
+
+    if (image == null) return;
 
     setState(() => _isProcessing = true);
     showLoading(context);
@@ -33,28 +54,36 @@ class _ScanQrPageState extends State<ScanQrPage> {
     try {
       await Future.delayed(const Duration(milliseconds: 500));
 
-      final BarcodeCapture? capture = await _cameraController.analyzeImage(image.path);
+      if (_cameraController != null) {
+        final BarcodeCapture? capture = await _cameraController!.analyzeImage(image.path);
 
-      if (!mounted) return;
-      hideLoading(context);
+        if (!mounted) return;
+        hideLoading(context);
 
-      if (capture != null && capture.barcodes.isNotEmpty) {
-        final String? code = capture.barcodes.first.rawValue;
-        if (code != null && code.trim().isNotEmpty) {
-          setState(() => _debugScanResult = "Terbaca dari Upload: $code");
-          _processQrCode(code); 
+        if (capture != null && capture.barcodes.isNotEmpty) {
+          final String? code = capture.barcodes.first.rawValue;
+          if (code != null && code.trim().isNotEmpty) {
+            setState(() => _debugScanResult = "Terbaca dari Upload: $code");
+            _processQrCode(code);
+          } else {
+            _showError("QR Code kosong atau tidak valid.");
+            setState(() => _isProcessing = false);
+          }
         } else {
-          _showError("QR Code kosong atau tidak valid.");
+          _showError("QR Code tidak terdeteksi pada gambar ini.");
           setState(() => _isProcessing = false);
         }
       } else {
-        _showError("QR Code tidak terdeteksi pada gambar ini.");
+        // Desktop: tidak bisa analyze image tanpa controller
+        if (!mounted) return;
+        hideLoading(context);
+        _showError("Upload QR tidak tersedia di desktop. Gunakan Input Manual.");
         setState(() => _isProcessing = false);
       }
     } catch (e) {
       if (!mounted) return;
       hideLoading(context);
-      _showError("Gagal membaca gambar. Pastikan gambar tajam.");
+      _showError("Gagal membaca gambar.");
       setState(() => _isProcessing = false);
     }
   }
@@ -62,25 +91,23 @@ class _ScanQrPageState extends State<ScanQrPage> {
   // --- LOGIKA LIVE CAMERA ---
   void _onDetect(BarcodeCapture capture) async {
     if (_isProcessing) return;
-    
+
     for (final barcode in capture.barcodes) {
       if (barcode.rawValue != null) {
         final String code = barcode.rawValue!;
-        
         if (mounted) {
           setState(() => _debugScanResult = "Terbaca dari Kamera: $code");
         }
-        
         _processQrCode(code);
-        break; 
+        break;
       }
     }
   }
 
-  // --- LOGIKA KE DATABASE SUPABASE ---
+  // --- LOGIKA KE DATABASE ---
   Future<void> _processQrCode(String code) async {
     setState(() => _isProcessing = true);
-    _cameraController.stop(); 
+    _cameraController?.stop();
     showLoading(context);
 
     try {
@@ -95,22 +122,19 @@ class _ScanQrPageState extends State<ScanQrPage> {
         await showDialog(
           context: context,
           barrierDismissible: false,
-          // Menggunakan dialogContext agar pop() tidak salah sasaran
           builder: (dialogContext) => AlertDialog(
-            title: const Column(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 60),
-                SizedBox(height: 10),
-                Text("Berhasil!", style: TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
+            title: const Column(children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 60),
+              SizedBox(height: 10),
+              Text("Berhasil!", style: TextStyle(fontWeight: FontWeight.bold)),
+            ]),
             content: Text(response['message'], textAlign: TextAlign.center),
             actions: [
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD32F2F)),
                 onPressed: () {
-                  Navigator.pop(dialogContext); // 1. Tutup Dialog
-                  Navigator.pop(context);       // 2. Kembali ke halaman Home
+                  Navigator.pop(dialogContext);
+                  Navigator.pop(context);
                 },
                 child: const Text("OK", style: TextStyle(color: Colors.white)),
               )
@@ -118,30 +142,25 @@ class _ScanQrPageState extends State<ScanQrPage> {
           ),
         );
       } else {
-        _showError(response['message'] ?? "QR Code ditolak."); 
-        
-        // JEDA ANTI-SPAM: Tunggu 2 detik sebelum kamera aktif lagi
+        _showError(response['message'] ?? "QR Code ditolak.");
         await Future.delayed(const Duration(seconds: 2));
         if (mounted) {
-          _cameraController.start();
+          _cameraController?.start();
           setState(() => _isProcessing = false);
         }
       }
-
     } catch (e) {
       if (mounted) hideLoading(context);
       _showError("Terjadi kesalahan sistem database.");
-      
-      // JEDA ANTI-SPAM
       await Future.delayed(const Duration(seconds: 2));
       if (mounted) {
-        _cameraController.start();
+        _cameraController?.start();
         setState(() => _isProcessing = false);
       }
     }
   }
 
-  // --- FITUR TESTING MANUAL (KETIK KODE) ---
+  // --- INPUT MANUAL ---
   void _showManualInputDialog() {
     final TextEditingController inputController = TextEditingController();
     showDialog(
@@ -154,13 +173,13 @@ class _ScanQrPageState extends State<ScanQrPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext), 
-            child: const Text("Batal")
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text("Batal"),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD32F2F)),
             onPressed: () {
-              Navigator.pop(dialogContext); // Tutup dialog input dulu
+              Navigator.pop(dialogContext);
               if (inputController.text.isNotEmpty) {
                 _processQrCode(inputController.text.trim());
               }
@@ -175,28 +194,23 @@ class _ScanQrPageState extends State<ScanQrPage> {
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message), 
-        backgroundColor: Colors.red, 
-        duration: const Duration(seconds: 3)
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red, duration: const Duration(seconds: 3)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, 
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 1. BOX CAMERA
+          // CAMERA / FALLBACK
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  width: 280,
-                  height: 280,
+                  width: 280, height: 280,
                   decoration: BoxDecoration(
                     color: Colors.black,
                     borderRadius: BorderRadius.circular(20),
@@ -204,26 +218,21 @@ class _ScanQrPageState extends State<ScanQrPage> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(18),
-                    child: Stack(
-                      children: [
-                        MobileScanner(
-                          controller: _cameraController,
-                          onDetect: _onDetect,
-                          fit: BoxFit.cover,
-                        ),
-                      ],
-                    ),
+                    child: _isMobilePlatform && _cameraController != null
+                        ? MobileScanner(
+                            controller: _cameraController!,
+                            onDetect: _onDetect,
+                            fit: BoxFit.cover,
+                          )
+                        : _buildDesktopFallback(),
                   ),
                 ),
-                
                 const SizedBox(height: 20),
-                
-                // TEKS DEBUG REALTIME
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(8)),
                   child: Text(
-                    _debugScanResult, 
+                    _isMobilePlatform ? _debugScanResult : "Desktop Mode: Gunakan Input Manual",
                     style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14),
                     textAlign: TextAlign.center,
                   ),
@@ -232,27 +241,21 @@ class _ScanQrPageState extends State<ScanQrPage> {
             ),
           ),
 
-          // 2. HEADER
+          // HEADER
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      const Text("Kembali", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ],
-              ),
+              child: Row(children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                const Text("Kembali", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              ]),
             ),
           ),
 
-          // 3. TOMBOL KONTROL BAWAH (Upload & Manual Input)
+          // BOTTOM CONTROLS
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
@@ -260,18 +263,38 @@ class _ScanQrPageState extends State<ScanQrPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // TOMBOL UPLOAD GAMBAR
-                  _buildCircleButton(Icons.image, "Upload QR", _pickAndScanImage),
-                  
-                  const SizedBox(width: 40),
+                  // Upload hanya di mobile
+                  if (_isMobilePlatform)
+                    _buildCircleButton(Icons.image, "Upload QR", _pickAndScanImage),
 
-                  // TOMBOL INPUT MANUAL (Penyelamat Testing)
+                  if (_isMobilePlatform) const SizedBox(width: 40),
+
+                  // Input manual (tersedia di semua platform)
                   _buildCircleButton(Icons.keyboard, "Input Manual", _showManualInputDialog),
                 ],
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // Fallback UI untuk desktop (tanpa kamera)
+  Widget _buildDesktopFallback() {
+    return Container(
+      color: const Color(0xFF1A1A2E),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.desktop_windows_rounded, color: Colors.white38, size: 48),
+            const SizedBox(height: 12),
+            const Text("Kamera tidak tersedia", style: TextStyle(color: Colors.white54, fontSize: 14, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            Text("Gunakan Input Manual di bawah", style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 12)),
+          ],
+        ),
       ),
     );
   }
@@ -294,10 +317,10 @@ class _ScanQrPageState extends State<ScanQrPage> {
       ],
     );
   }
-  
+
   @override
   void dispose() {
-    _cameraController.dispose();
+    _cameraController?.dispose();
     super.dispose();
   }
 }
