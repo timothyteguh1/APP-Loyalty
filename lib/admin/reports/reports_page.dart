@@ -144,38 +144,80 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
     }
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8FB),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF1A1A2E))),
-        title: const Text('Laporan & Analytics', style: TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w700, fontSize: 18)),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: const Color(0xFFB71C1C),
-          labelColor: const Color(0xFFB71C1C),
-          unselectedLabelColor: Colors.grey[500],
-          labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [
-            Tab(text: 'Dashboard'),
-            Tab(text: 'Pendapatan'),
-            Tab(text: 'Penukaran'),
-          ],
-        ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFB71C1C)))
-          : TabBarView(
-              controller: _tabController,
+      backgroundColor: Colors.transparent, // Transparan agar menyatu dengan background utama
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ======= CUSTOM HEADER PENGGANTI APPBAR =======
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildDashboardTab(),
-                _buildIncomeTab(),
-                _buildRedeemTab(),
+                const Text(
+                  'Laporan & Analytics', 
+                  style: TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w800, fontSize: 24)
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Rekapitulasi pendapatan dan penukaran poin.', 
+                  style: TextStyle(color: Colors.grey, fontSize: 14)
+                ),
+                const SizedBox(height: 24),
+
+                // ======= TAB BAR MODERN =======
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(6),
+                  child: TabBar(
+                    controller: _tabController,
+                    indicator: BoxDecoration(
+                      color: const Color(0xFFB71C1C).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
+                    labelColor: const Color(0xFFB71C1C),
+                    unselectedLabelColor: Colors.grey[500],
+                    labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                    unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    tabs: const [
+                      Tab(text: 'Dashboard'),
+                      Tab(text: 'Pendapatan'),
+                      Tab(text: 'Penukaran'),
+                    ],
+                  ),
+                ),
               ],
             ),
+          ),
+          
+          const SizedBox(height: 16),
+
+          // ======= ISI KONTEN TAB =======
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFFB71C1C)))
+                : TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildDashboardTab(),
+                      _buildIncomeTab(),
+                      _buildRedeemTab(),
+                    ],
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -286,7 +328,10 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
   }
 
   // ================= TAB 2: PENDAPATAN (POIN MASUK) =================
+ // ================= TAB 2: PENDAPATAN (POIN MASUK) =================
   Widget _buildIncomeTab() {
+    final bool isDesktop = MediaQuery.of(context).size.width >= 800;
+    
     final incomeData = _historyData.where((item) {
       final amount = (item['amount'] as num?)?.toInt() ?? 0;
       if (amount <= 0) return false;
@@ -315,11 +360,13 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
         Expanded(
           child: incomeData.isEmpty
               ? const Center(child: Text('Tidak ada data pendapatan poin.', style: TextStyle(color: Colors.grey)))
-              : ListView.builder(
-                  itemCount: incomeData.length,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemBuilder: (ctx, i) => _historyTile(incomeData[i], true),
-                ),
+              : isDesktop
+                  ? _buildDesktopTable(incomeData, true) // Tampilan Tabel di PC
+                  : ListView.builder(                    // Tampilan List di HP
+                      itemCount: incomeData.length,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      itemBuilder: (ctx, i) => _historyTile(incomeData[i], true),
+                    ),
         ),
       ],
     );
@@ -327,6 +374,8 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
 
   // ================= TAB 3: PENUKARAN (POIN KELUAR) =================
   Widget _buildRedeemTab() {
+    final bool isDesktop = MediaQuery.of(context).size.width >= 800;
+
     final redeemData = _historyData.where((item) {
       final amount = (item['amount'] as num?)?.toInt() ?? 0;
       if (amount >= 0) return false;
@@ -334,10 +383,7 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
       final name = (item['profiles']?['full_name'] ?? '').toString().toLowerCase();
       final desc = item['description'] ?? '';
 
-      // Text Search Filter
       if (_searchOutQuery.isNotEmpty && !name.contains(_searchOutQuery.toLowerCase())) return false;
-      
-      // Dropdown Item Filter
       if (_selectedItemFilter != null && _selectedItemFilter != 'Semua Barang' && desc != _selectedItemFilter) return false;
 
       return true;
@@ -363,7 +409,6 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
                 ),
               ),
               const SizedBox(width: 12),
-              // FILTER BARANG
               Expanded(
                 child: DropdownButtonFormField<String>(
                   value: _selectedItemFilter,
@@ -392,17 +437,92 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
         Expanded(
           child: redeemData.isEmpty
               ? const Center(child: Text('Tidak ada riwayat penukaran sesuai filter.', style: TextStyle(color: Colors.grey)))
-              : ListView.builder(
-                  itemCount: redeemData.length,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemBuilder: (ctx, i) => _historyTile(redeemData[i], false),
-                ),
+              : isDesktop
+                  ? _buildDesktopTable(redeemData, false) // Tampilan Tabel di PC
+                  : ListView.builder(                     // Tampilan List di HP
+                      itemCount: redeemData.length,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      itemBuilder: (ctx, i) => _historyTile(redeemData[i], false),
+                    ),
         ),
       ],
     );
   }
 
-  // WIDGET TILE UNTUK LIST
+  // --- WIDGET BARU: TABEL UNTUK DESKTOP (FULL WIDTH) ---
+  Widget _buildDesktopTable(List<Map<String, dynamic>> data, bool isIn) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFF0F0F0)),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width - 290), // Menyesuaikan lebar sidebar
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(const Color(0xFFF8F9FC)),
+                dataRowMinHeight: 64,
+                dataRowMaxHeight: 64,
+                horizontalMargin: 24,
+                columnSpacing: 32,
+                columns: const [
+                  DataColumn(label: Text('Tanggal', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF6B7280)))),
+                  DataColumn(label: Expanded(child: Text('Nama Toko', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF6B7280))))),
+                  DataColumn(label: Expanded(child: Text('Deskripsi', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF6B7280))))),
+                  DataColumn(label: Text('Jumlah Poin', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF6B7280)))),
+                ],
+                rows: data.map((item) {
+                  final amount = (item['amount'] as num?)?.toInt() ?? 0;
+                  final name = item['profiles']?['full_name'] ?? 'User Tidak Diketahui';
+                  final desc = item['description'] ?? '-';
+                  
+                  String dateStr = '';
+                  if (item['created_at'] != null) {
+                    final dt = DateTime.parse(item['created_at']).toLocal();
+                    dateStr = DateFormat('dd MMM yyyy, HH:mm').format(dt);
+                  }
+
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(dateStr, style: TextStyle(color: Colors.grey[600], fontSize: 13))),
+                      DataCell(Text(name, style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E)))),
+                      DataCell(Text(desc, style: TextStyle(color: Colors.grey[700], fontSize: 13))),
+                      DataCell(
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: (isIn ? const Color(0xFF10B981) : const Color(0xFFEF4444)).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            isIn ? '+$amount' : '$amount',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800, 
+                              color: isIn ? const Color(0xFF10B981) : const Color(0xFFEF4444)
+                            ),
+                          ),
+                        )
+                      ),
+                    ]
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- WIDGET LAMA: TILE UNTUK LIST HP ---
   Widget _historyTile(Map<String, dynamic> item, bool isIn) {
     final amount = (item['amount'] as num?)?.toInt() ?? 0;
     final name = item['profiles']?['full_name'] ?? 'User Tidak Diketahui';
