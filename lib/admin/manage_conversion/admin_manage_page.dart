@@ -23,6 +23,13 @@ class _AdminManagePageState extends State<AdminManagePage> with SingleTickerProv
   String _logSearch = '';
   final _logSearchCtrl = TextEditingController();
 
+  // [NEW] Date range filter for log
+  DateTimeRange? _logDateRange;
+
+  // [NEW] Store name filter
+  String? _selectedStoreName;
+  List<String> _storeNames = [];
+
   @override
   void initState() {
     super.initState();
@@ -64,10 +71,39 @@ class _AdminManagePageState extends State<AdminManagePage> with SingleTickerProv
           .select('*, profiles(full_name)')
           .order('created_at', ascending: false)
           .limit(200);
-      if (mounted) setState(() { _logs = List<Map<String, dynamic>>.from(data); _isLoadingLogs = false; });
+      if (mounted) {
+        final logs = List<Map<String, dynamic>>.from(data);
+        // Extract unique store names for filter dropdown
+        final Set<String> names = {};
+        for (var item in logs) {
+          final name = item['profiles']?['full_name']?.toString() ?? '';
+          if (name.isNotEmpty) names.add(name);
+        }
+        setState(() {
+          _logs = logs;
+          _storeNames = names.toList()..sort();
+          _isLoadingLogs = false;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _isLoadingLogs = false);
     }
+  }
+
+  // ======= DATE RANGE PICKER =======
+  Future<void> _pickLogDateRange() async {
+    final now = DateTime.now();
+    final result = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2024),
+      lastDate: now,
+      initialDateRange: _logDateRange ?? DateTimeRange(start: now.subtract(const Duration(days: 30)), end: now),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFFB71C1C), onPrimary: Colors.white, surface: Colors.white)),
+        child: child!,
+      ),
+    );
+    if (result != null) setState(() => _logDateRange = result);
   }
 
   // ======= ADD ADMIN =======
@@ -172,7 +208,6 @@ class _AdminManagePageState extends State<AdminManagePage> with SingleTickerProv
         title: const Text('Admin & Log', style: TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w700, fontSize: 18)),
       ),
       body: Column(children: [
-        // Tab Bar
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
           child: Container(
@@ -207,7 +242,6 @@ class _AdminManagePageState extends State<AdminManagePage> with SingleTickerProv
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Info
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(color: const Color(0xFFF0F9FF), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFBAE6FD))),
@@ -218,7 +252,6 @@ class _AdminManagePageState extends State<AdminManagePage> with SingleTickerProv
           ]),
         ),
         const SizedBox(height: 16),
-        // Add button
         SizedBox(
           width: double.infinity, height: 48,
           child: OutlinedButton.icon(
@@ -231,7 +264,6 @@ class _AdminManagePageState extends State<AdminManagePage> with SingleTickerProv
         const SizedBox(height: 20),
         Text('${_adminEmails.length} Admin Terdaftar', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
         const SizedBox(height: 12),
-        // Admin list
         ...List.generate(_adminEmails.length, (i) {
           final email = _adminEmails[i];
           final isFirst = i == 0;
@@ -276,55 +308,137 @@ class _AdminManagePageState extends State<AdminManagePage> with SingleTickerProv
     );
   }
 
-  // ======= TAB 2: LOG AKTIVITAS =======
+  // ======= TAB 2: LOG AKTIVITAS (WITH DATE + STORE FILTER) =======
   Widget _buildLogTab() {
     if (_isLoadingLogs) return const Center(child: CircularProgressIndicator(color: Color(0xFFB71C1C)));
 
     final filtered = _logs.where((item) {
-      if (_logSearch.isEmpty) return true;
-      final name = (item['profiles']?['full_name'] ?? '').toString().toLowerCase();
-      final desc = (item['description'] ?? '').toString().toLowerCase();
-      return name.contains(_logSearch.toLowerCase()) || desc.contains(_logSearch.toLowerCase());
+      // Text search
+      if (_logSearch.isNotEmpty) {
+        final name = (item['profiles']?['full_name'] ?? '').toString().toLowerCase();
+        final desc = (item['description'] ?? '').toString().toLowerCase();
+        if (!name.contains(_logSearch.toLowerCase()) && !desc.contains(_logSearch.toLowerCase())) return false;
+      }
+      // Store name filter
+      if (_selectedStoreName != null && _selectedStoreName!.isNotEmpty) {
+        final name = item['profiles']?['full_name']?.toString() ?? '';
+        if (name != _selectedStoreName) return false;
+      }
+      // Date range filter
+      if (_logDateRange != null && item['created_at'] != null) {
+        try {
+          final dt = DateTime.parse(item['created_at']).toLocal();
+          if (dt.isBefore(_logDateRange!.start) || dt.isAfter(_logDateRange!.end.add(const Duration(days: 1)))) return false;
+        } catch (_) {}
+      }
+      return true;
     }).toList();
 
     final bool isDesktop = MediaQuery.of(context).size.width >= 800;
+    final fmt = DateFormat('dd MMM yyyy');
+    final bool hasActiveFilter = _logSearch.isNotEmpty || _logDateRange != null || _selectedStoreName != null;
 
     return Column(children: [
-      // Search
+      // ======= FILTER BAR =======
       Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-        child: TextField(
-          controller: _logSearchCtrl,
-          onChanged: (v) => setState(() => _logSearch = v),
-          decoration: InputDecoration(
-            hintText: 'Cari nama toko atau deskripsi...', hintStyle: const TextStyle(fontSize: 13),
-            prefixIcon: const Icon(Icons.search, color: Colors.grey, size: 20),
-            suffixIcon: _logSearch.isNotEmpty ? IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () { _logSearchCtrl.clear(); setState(() => _logSearch = ''); }) : null,
-            filled: true, fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(vertical: 0),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-          ),
-        ),
-      ),
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Row(children: [
-          Text('${filtered.length} aktivitas', style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
-          const Spacer(),
-          GestureDetector(
-            onTap: _fetchLogs,
-            child: const Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.refresh_rounded, size: 14, color: Color(0xFF3B82F6)),
-              SizedBox(width: 4),
-              Text('Refresh', style: TextStyle(fontSize: 12, color: Color(0xFF3B82F6), fontWeight: FontWeight.w600)),
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+        child: Column(children: [
+          Row(children: [
+            // Search
+            Expanded(
+              child: TextField(
+                controller: _logSearchCtrl,
+                onChanged: (v) => setState(() => _logSearch = v),
+                decoration: InputDecoration(
+                  hintText: 'Cari nama toko atau deskripsi...', hintStyle: const TextStyle(fontSize: 13),
+                  prefixIcon: const Icon(Icons.search, color: Colors.grey, size: 20),
+                  suffixIcon: _logSearch.isNotEmpty ? IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () { _logSearchCtrl.clear(); setState(() => _logSearch = ''); }) : null,
+                  filled: true, fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // [NEW] Date picker button
+            GestureDetector(
+              onTap: _pickLogDateRange,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                decoration: BoxDecoration(
+                  color: _logDateRange != null ? const Color(0xFFB71C1C).withOpacity(0.08) : Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _logDateRange != null ? const Color(0xFFB71C1C).withOpacity(0.3) : Colors.transparent),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.date_range_rounded, size: 18, color: _logDateRange != null ? const Color(0xFFB71C1C) : Colors.grey),
+                  if (_logDateRange != null) ...[
+                    const SizedBox(width: 6),
+                    Text('${fmt.format(_logDateRange!.start)} - ${fmt.format(_logDateRange!.end)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFB71C1C))),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () => setState(() => _logDateRange = null),
+                      child: const Icon(Icons.close, size: 14, color: Color(0xFFB71C1C)),
+                    ),
+                  ],
+                ]),
+              ),
+            ),
+          ]),
+
+          // [NEW] Store filter + result count row
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(children: [
+              Text('${filtered.length} aktivitas', style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+              if (hasActiveFilter) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () { _logSearchCtrl.clear(); setState(() { _logSearch = ''; _logDateRange = null; _selectedStoreName = null; }); },
+                  child: const Text('Reset filter', style: TextStyle(fontSize: 12, color: Color(0xFFB71C1C), fontWeight: FontWeight.w600)),
+                ),
+              ],
+              const Spacer(),
+              // Store dropdown
+              if (_storeNames.isNotEmpty)
+                SizedBox(
+                  width: 180,
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedStoreName,
+                    decoration: InputDecoration(filled: true, fillColor: Colors.white, contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none)),
+                    hint: const Text('Semua Toko', style: TextStyle(fontSize: 12)),
+                    isExpanded: true,
+                    icon: const Icon(Icons.filter_list_rounded, size: 16),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Semua Toko', style: TextStyle(fontSize: 12))),
+                      ..._storeNames.map((n) => DropdownMenuItem(value: n, child: Text(n, style: const TextStyle(fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis))),
+                    ],
+                    onChanged: (v) => setState(() => _selectedStoreName = v),
+                  ),
+                ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _fetchLogs,
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.refresh_rounded, size: 14, color: Color(0xFF3B82F6)),
+                  SizedBox(width: 4),
+                  Text('Refresh', style: TextStyle(fontSize: 12, color: Color(0xFF3B82F6), fontWeight: FontWeight.w600)),
+                ]),
+              ),
             ]),
           ),
         ]),
       ),
-      const SizedBox(height: 8),
+
+      // ======= LOG CONTENT =======
       Expanded(
         child: filtered.isEmpty
-            ? const Center(child: Text('Tidak ada log', style: TextStyle(color: Colors.grey)))
+            ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Icon(Icons.inbox_rounded, size: 48, color: Colors.grey[300]),
+                const SizedBox(height: 12),
+                const Text('Tidak ada log', style: TextStyle(color: Colors.grey)),
+              ]))
             : isDesktop
                 ? _buildLogTable(filtered)
                 : RefreshIndicator(

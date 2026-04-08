@@ -5,6 +5,7 @@ import '../manage_banners/banners_manage_page.dart';
 import 'manual_points_page.dart';
 import '../accurate/accurate_connect_page.dart';
 import 'admin_manage_page.dart';
+import 'admin_register_user_page.dart'; // [NEW]
 
 class ManageMenuPage extends StatelessWidget {
   const ManageMenuPage({super.key});
@@ -25,28 +26,32 @@ class ManageMenuPage extends StatelessWidget {
 
           Wrap(
             spacing: 16,
-            runSpacing: 0, // margin-bottom dikelola oleh _MenuItem
+            runSpacing: 0,
             children: [
               _menuWrapper(isDesktop, _MenuItem(icon: Icons.sync_alt_rounded, color: const Color(0xFF3B82F6), title: 'Konversi Poin', subtitle: 'Atur rate global & per user', delay: 0, onTap: () => Navigator.push(context, _slideRoute(const _ConversionWrapper())))),
               _menuWrapper(isDesktop, _MenuItem(icon: Icons.card_giftcard_rounded, color: const Color(0xFFB71C1C), title: 'Kelola Hadiah', subtitle: 'Tambah, edit, hapus hadiah', delay: 80, onTap: () => Navigator.push(context, _slideRoute(const RewardsManagePage())))),
               _menuWrapper(isDesktop, _MenuItem(icon: Icons.image_rounded, color: const Color(0xFF8B5CF6), title: 'Kelola Banner', subtitle: 'Promo & banner aplikasi', delay: 160, onTap: () => Navigator.push(context, _slideRoute(const BannersManagePage())))),
               _menuWrapper(isDesktop, _MenuItem(icon: Icons.add_circle_outline_rounded, color: const Color(0xFFF59E0B), title: 'Manual Poin', subtitle: 'Tambah/kurangi poin manual', delay: 240, onTap: () => Navigator.push(context, _slideRoute(const ManualPointsPage())))),
-              _menuWrapper(isDesktop, _MenuItem(icon: Icons.admin_panel_settings_rounded, color: const Color(0xFF0EA5E9), title: 'Admin & Log', subtitle: 'Kelola admin dan lihat log aktivitas', delay: 320, isNew: true, onTap: () => Navigator.push(context, _slideRoute(const AdminManagePage())))),
+              _menuWrapper(isDesktop, _MenuItem(icon: Icons.admin_panel_settings_rounded, color: const Color(0xFF0EA5E9), title: 'Admin & Log', subtitle: 'Kelola admin dan lihat log aktivitas', delay: 320, onTap: () => Navigator.push(context, _slideRoute(const AdminManagePage())))),
+            ],
+          ),
+
+          // ======= USER MANAGEMENT =======
+          const SizedBox(height: 8),
+          _sectionDivider('User Management'),
+
+          Wrap(
+            spacing: 16,
+            runSpacing: 0,
+            children: [
+              // [NEW] Register User
+              _menuWrapper(isDesktop, _MenuItem(icon: Icons.person_add_alt_1_rounded, color: const Color(0xFF7C3AED), title: 'Daftarkan User', subtitle: 'Register toko kecil oleh admin', delay: 360, isNew: true, onTap: () => Navigator.push(context, _slideRoute(const AdminRegisterUserPage())))),
             ],
           ),
 
           // ======= INTEGRASI =======
           const SizedBox(height: 8),
-          Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            child: Row(children: [
-              Container(width: 40, height: 1, color: const Color(0xFFE5E7EB)),
-              const SizedBox(width: 8),
-              const Text('Integrasi', style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w600)),
-              const SizedBox(width: 8),
-              Expanded(child: Container(height: 1, color: const Color(0xFFE5E7EB))),
-            ]),
-          ),
+          _sectionDivider('Integrasi'),
 
           Wrap(
             spacing: 16,
@@ -60,7 +65,19 @@ class ManageMenuPage extends StatelessWidget {
     );
   }
 
-  // Helper agar menu bisa membelah dua di PC, tapi full di HP
+  Widget _sectionDivider(String label) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Row(children: [
+        Container(width: 40, height: 1, color: const Color(0xFFE5E7EB)),
+        const SizedBox(width: 8),
+        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w600)),
+        const SizedBox(width: 8),
+        Expanded(child: Container(height: 1, color: const Color(0xFFE5E7EB))),
+      ]),
+    );
+  }
+
   Widget _menuWrapper(bool isDesktop, Widget child) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -81,7 +98,6 @@ class ManageMenuPage extends StatelessWidget {
   }
 }
 
-// ... [CLASS _AccurateWrapper, _ConversionWrapper, dan _MenuItem 100% SAMA SEPERTI ASLI] ...
 class _AccurateWrapper extends StatelessWidget {
   const _AccurateWrapper();
   @override
