@@ -3,6 +3,7 @@ import 'conversion_page.dart';
 import '../manage_rewards/rewards_manage_page.dart';
 import '../manage_banners/banners_manage_page.dart';
 import 'manual_points_page.dart';
+import '../accurate/accurate_connect_page.dart';
 
 class ManageMenuPage extends StatelessWidget {
   const ManageMenuPage({super.key});
@@ -63,6 +64,32 @@ class ManageMenuPage extends StatelessWidget {
             onTap: () =>
                 Navigator.push(context, _slideRoute(const ManualPointsPage())),
           ),
+
+          // ======= ACCURATE INTEGRATION =======
+          const SizedBox(height: 8),
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: Row(children: [
+              Container(width: 40, height: 1, color: const Color(0xFFE5E7EB)),
+              const SizedBox(width: 8),
+              const Text('Integrasi', style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+              Expanded(child: Container(height: 1, color: const Color(0xFFE5E7EB))),
+            ]),
+          ),
+
+          _MenuItem(
+            icon: Icons.receipt_long_rounded,
+            color: const Color(0xFF059669),
+            title: 'Koneksi Accurate',
+            subtitle: 'Sync faktur penjualan → poin toko',
+            delay: 320,
+            isNew: true,
+            onTap: () => Navigator.push(
+              context,
+              _slideRoute(const _AccurateWrapper()),
+            ),
+          ),
         ],
       ),
     );
@@ -85,7 +112,40 @@ class ManageMenuPage extends StatelessWidget {
   }
 }
 
-// Wrapper supaya ConversionPage punya AppBar + back button
+// Wrapper AccurateConnectPage dengan AppBar
+class _AccurateWrapper extends StatelessWidget {
+  const _AccurateWrapper();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F8FB),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF1A1A2E)),
+        ),
+        title: const Text(
+          'Koneksi Accurate',
+          style: TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w700, fontSize: 18),
+        ),
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(8)),
+            child: const Text('Accurate Online', style: TextStyle(fontSize: 11, color: Color(0xFF059669), fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+      body: const AccurateConnectPage(),
+    );
+  }
+}
+
+// Wrapper ConversionPage
 class _ConversionWrapper extends StatelessWidget {
   const _ConversionWrapper();
 
@@ -102,11 +162,7 @@ class _ConversionWrapper extends StatelessWidget {
         ),
         title: const Text(
           'Konversi Poin',
-          style: TextStyle(
-            color: Color(0xFF1A1A2E),
-            fontWeight: FontWeight.w700,
-            fontSize: 18,
-          ),
+          style: TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w700, fontSize: 18),
         ),
       ),
       body: const ConversionPage(),
@@ -121,6 +177,7 @@ class _MenuItem extends StatelessWidget {
   final String subtitle;
   final int delay;
   final VoidCallback onTap;
+  final bool isNew;
 
   const _MenuItem({
     required this.icon,
@@ -129,6 +186,7 @@ class _MenuItem extends StatelessWidget {
     required this.subtitle,
     required this.delay,
     required this.onTap,
+    this.isNew = false,
   });
 
   @override
@@ -139,10 +197,7 @@ class _MenuItem extends StatelessWidget {
       curve: Curves.easeOutCubic,
       builder: (_, val, child) => Opacity(
         opacity: val,
-        child: Transform.translate(
-          offset: Offset(0, 16 * (1 - val)),
-          child: child,
-        ),
+        child: Transform.translate(offset: Offset(0, 16 * (1 - val)), child: child),
       ),
       child: GestureDetector(
         onTap: onTap,
@@ -152,17 +207,13 @@ class _MenuItem extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFF0F0F0)),
+            border: Border.all(color: isNew ? color.withOpacity(0.2) : const Color(0xFFF0F0F0)),
           ),
           child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(14),
-                ),
+                width: 48, height: 48,
+                decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(14)),
                 child: Icon(icon, color: color, size: 24),
               ),
               const SizedBox(width: 16),
@@ -170,30 +221,23 @@ class _MenuItem extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1A1A2E),
-                      ),
-                    ),
+                    Row(children: [
+                      Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E))),
+                      if (isNew) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                          child: Text('BARU', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: color)),
+                        ),
+                      ],
+                    ]),
                     const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF9CA3AF),
-                      ),
-                    ),
+                    Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
                   ],
                 ),
               ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: Color(0xFFD1D5DB),
-                size: 22,
-              ),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFFD1D5DB), size: 22),
             ],
           ),
         ),

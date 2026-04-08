@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accurate OAuth Callback</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f3f4f6;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      background: white;
+      border-radius: 20px;
+      padding: 32px;
+      max-width: 520px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    }
+    .icon { font-size: 48px; text-align: center; margin-bottom: 16px; }
+    h1 { font-size: 20px; font-weight: 700; color: #1a1a2e; text-align: center; margin-bottom: 8px; }
+    p { font-size: 14px; color: #6b7280; text-align: center; margin-bottom: 24px; line-height: 1.5; }
+    .token-box {
+      background: #f0fdf4;
+      border: 1.5px solid #86efac;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .token-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #059669;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .token-value {
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      color: #065f46;
+      word-break: break-all;
+      line-height: 1.5;
+      user-select: all;
+    }
+    .copy-btn {
+      width: 100%;
+      background: #059669;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-bottom: 12px;
+    }
+    .copy-btn:hover { background: #047857; }
+    .copy-btn.copied { background: #10b981; }
+    .back-btn {
+      width: 100%;
+      background: #f3f4f6;
+      color: #374151;
+      border: none;
+      border-radius: 12px;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .back-btn:hover { background: #e5e7eb; }
+    .steps {
+      background: #eff6ff;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+    .step { display: flex; align-items: flex-start; margin-bottom: 8px; gap: 10px; }
+    .step:last-child { margin-bottom: 0; }
+    .step-num {
+      width: 22px; height: 22px; min-width: 22px;
+      background: #3b82f6;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; color: white;
+    }
+    .step-text { font-size: 13px; color: #1e40af; line-height: 1.4; padding-top: 2px; }
+    .error-box {
+      background: #fef2f2;
+      border: 1.5px solid #fca5a5;
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      color: #dc2626;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card" id="main-card">
+    <div class="icon">🔑</div>
+    <h1 id="title">Memproses...</h1>
+    <p id="subtitle">Mohon tunggu sebentar</p>
+  </div>
+
+  <script>
+    const fragment = window.location.hash.substring(1);
+    const params = new URLSearchParams(fragment);
+    const token = params.get('access_token');
+    const card = document.getElementById('main-card');
+
+    if (token) {
+      card.innerHTML = `
+        <div class="icon">✅</div>
+        <h1>Login Accurate Berhasil!</h1>
+        <p>Copy token di bawah ini, lalu paste di halaman admin Upsol.</p>
+
+        <div class="token-box">
+          <div class="token-label">Access Token</div>
+          <div class="token-value" id="token-text">${token}</div>
+        </div>
+
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-text">Klik tombol "Copy Token" di bawah</div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-text">Kembali ke tab admin Upsol (tab sebelumnya)</div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-text">Klik "Paste Access Token di sini" → paste → Simpan</div>
+          </div>
+        </div>
+
+        <button class="copy-btn" id="copy-btn" onclick="copyToken()">
+          📋 Copy Token
+        </button>
+        <button class="back-btn" onclick="window.close()">
+          ✕ Tutup Tab Ini
+        </button>
+      `;
+    } else {
+      card.innerHTML = `
+        <div class="icon">❌</div>
+        <h1>Token Tidak Ditemukan</h1>
+        <div class="error-box">
+          URL tidak mengandung access_token.<br><br>
+          Pastikan URL OAuth Callback di Accurate Developer Portal diisi:<br>
+          <strong>http://localhost:3000/oauth_callback.html</strong>
+        </div>
+        <br>
+        <button class="back-btn" onclick="window.close()">Tutup</button>
+      `;
+    }
+
+    function copyToken() {
+      navigator.clipboard.writeText(token).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = '✅ Token Berhasil Dicopy!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = '📋 Copy Token';
+          btn.classList.remove('copied');
+        }, 3000);
+      });
+    }
+  </script>
+</body>
+</html>
