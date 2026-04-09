@@ -35,7 +35,7 @@ class _ManualPointsPageState extends State<ManualPointsPage> {
   Future<void> _fetchUsers() async {
     setState(() => _isLoading = true);
     try {
-      final data = await _admin.from('profiles').select().order('full_name');
+      final data = await _admin.from('profiles').select().eq('approval_status', 'APPROVED').order('full_name');
       if (mounted) setState(() { _users = List<Map<String, dynamic>>.from(data); _isLoading = false; });
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);

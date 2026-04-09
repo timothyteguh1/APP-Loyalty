@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase/supabase.dart';
 import '../admin_supabase.dart';
 
 class AdminManagePage extends StatefulWidget {
@@ -64,19 +65,102 @@ class _AdminManagePageState extends State<AdminManagePage> with SingleTickerProv
   }
 
   Future<void> _addAdmin() async {
-    final ctrl = TextEditingController();
-    final result = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFF3B82F6).withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.person_add_rounded, color: Color(0xFF3B82F6), size: 20)), const SizedBox(width: 12), const Text('Tambah Admin', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18))]),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [const Text('Masukkan email yang sudah terdaftar di Supabase Auth.', style: TextStyle(fontSize: 13, color: Color(0xFF6B7280))), const SizedBox(height: 16),
-        TextField(controller: ctrl, keyboardType: TextInputType.emailAddress, decoration: InputDecoration(hintText: 'admin@email.com', prefixIcon: const Icon(Icons.email_outlined, size: 20), filled: true, fillColor: const Color(0xFFF9FAFB), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 1.5))))]),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
-        ElevatedButton(onPressed: () { final email = ctrl.text.trim().toLowerCase(); if (email.isEmpty || !email.contains('@')) { ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Email tidak valid'), backgroundColor: Color(0xFFEF4444))); return; } Navigator.pop(ctx, email); }, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3B82F6), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), child: const Text('Tambah', style: TextStyle(color: Colors.white)))],
-    ));
+    final emailCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    bool showPass = false;
+
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setD) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFF3B82F6).withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.person_add_rounded, color: Color(0xFF3B82F6), size: 20)),
+          const SizedBox(width: 12),
+          const Text('Buat Akun Admin', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+        ]),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Buat akun baru yang langsung jadi admin panel.', style: TextStyle(fontSize: 13, color: Color(0xFF6B7280), height: 1.5)),
+          const SizedBox(height: 16),
+          const Text('Nama', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
+          const SizedBox(height: 6),
+          TextField(controller: nameCtrl, decoration: _dialogInputDec('Nama admin', Icons.person_outline_rounded)),
+          const SizedBox(height: 14),
+          const Text('Email *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
+          const SizedBox(height: 6),
+          TextField(controller: emailCtrl, keyboardType: TextInputType.emailAddress, decoration: _dialogInputDec('admin@email.com', Icons.email_outlined)),
+          const SizedBox(height: 14),
+          const Text('Password *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
+          const SizedBox(height: 6),
+          TextField(controller: passCtrl, obscureText: !showPass, decoration: _dialogInputDec('Minimal 6 karakter', Icons.lock_outline_rounded).copyWith(
+            suffixIcon: IconButton(icon: Icon(showPass ? Icons.visibility_rounded : Icons.visibility_off_rounded, size: 20, color: Colors.grey[400]), onPressed: () => setD(() => showPass = !showPass)),
+          )),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            onPressed: () {
+              final email = emailCtrl.text.trim().toLowerCase();
+              final pass = passCtrl.text.trim();
+              if (email.isEmpty || !email.contains('@')) { ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Email tidak valid'), backgroundColor: Color(0xFFEF4444))); return; }
+              if (pass.length < 6) { ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Password minimal 6 karakter'), backgroundColor: Color(0xFFEF4444))); return; }
+              Navigator.pop(ctx, {'email': email, 'password': pass, 'name': nameCtrl.text.trim()});
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3B82F6), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0),
+            child: const Text('Buat & Tambahkan', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      )),
+    );
+
     if (result == null) return;
-    if (_adminEmails.contains(result)) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email sudah terdaftar'), backgroundColor: Color(0xFFF59E0B))); return; }
-    try { final newList = [..._adminEmails, result]; await _admin.from('app_config').update({'value': newList.join(',')}).eq('key', 'admin_emails'); _fetchAdmins(); if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$result ditambahkan'), backgroundColor: const Color(0xFF10B981), behavior: SnackBarBehavior.floating, margin: const EdgeInsets.all(20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))); }
-    catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e'), backgroundColor: const Color(0xFFEF4444))); }
+    final email = result['email']!;
+    final password = result['password']!;
+    final name = result['name'] ?? '';
+
+    if (_adminEmails.contains(email)) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email sudah terdaftar sebagai admin'), backgroundColor: Color(0xFFF59E0B)));
+      return;
+    }
+
+    try {
+      // 1. Buat akun via service role
+      final res = await _admin.auth.admin.createUser(AdminUserAttributes(
+        email: email,
+        password: password,
+        emailConfirm: true,
+        userMetadata: {'full_name': name.isNotEmpty ? name : email.split('@')[0]},
+      ));
+
+      if (res.user == null) throw 'Gagal membuat akun';
+
+      // 2. Tambah ke daftar admin
+      final newList = [..._adminEmails, email];
+      await _admin.from('app_config').update({'value': newList.join(',')}).eq('key', 'admin_emails');
+      _fetchAdmins();
+
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Akun $email berhasil dibuat & ditambahkan sebagai admin'),
+        backgroundColor: const Color(0xFF10B981),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e'), backgroundColor: const Color(0xFFEF4444)));
+    }
+  }
+
+  InputDecoration _dialogInputDec(String hint, IconData icon) {
+    return InputDecoration(
+      hintText: hint, hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+      prefixIcon: Icon(icon, size: 20, color: Colors.grey[400]),
+      filled: true, fillColor: const Color(0xFFF9FAFB),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 1.5)),
+    );
   }
 
   Future<void> _removeAdmin(String email) async {

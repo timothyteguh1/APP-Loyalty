@@ -17,12 +17,10 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
   bool _isLoading = true;
   List<Map<String, dynamic>> _historyData = [];
   
-  // Tab 2 (Pendapatan)
   String _searchInQuery = '';
   final _searchInCtrl = TextEditingController();
   DateTimeRange? _dateRangeIn;
 
-  // Tab 3 (Penukaran)
   String _searchOutQuery = '';
   String? _selectedItemFilter;
   List<String> _redeemedItems = [];
@@ -47,11 +45,7 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
   Future<void> _fetchReportData() async {
     setState(() => _isLoading = true);
     try {
-      final response = await _admin
-          .from('point_history')
-          .select('*, profiles(full_name)')
-          .order('created_at', ascending: false);
-
+      final response = await _admin.from('point_history').select('*, profiles(full_name)').order('created_at', ascending: false);
       if (mounted) {
         final data = List<Map<String, dynamic>>.from(response);
         final Set<String> items = {};
@@ -59,55 +53,28 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
           final int amount = (item['amount'] as num?)?.toInt() ?? 0;
           if (amount < 0) items.add(item['description'] ?? 'Lainnya');
         }
-        setState(() {
-          _historyData = data;
-          _redeemedItems = items.toList()..sort();
-          _isLoading = false;
-        });
+        setState(() { _historyData = data; _redeemedItems = items.toList()..sort(); _isLoading = false; });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal memuat data: $e'), backgroundColor: const Color(0xFFEF4444)));
-      }
+      if (mounted) { setState(() => _isLoading = false); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal memuat data: $e'), backgroundColor: const Color(0xFFEF4444))); }
     }
   }
 
-  // ======= DATE RANGE PICKER =======
   Future<void> _pickDateRange(bool isIncome) async {
     final now = DateTime.now();
     final initial = isIncome ? _dateRangeIn : _dateRangeOut;
-    final result = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2024),
-      lastDate: now,
-      initialDateRange: initial ?? DateTimeRange(start: now.subtract(const Duration(days: 30)), end: now),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFFB71C1C), onPrimary: Colors.white, surface: Colors.white)),
-        child: child!,
-      ),
-    );
-    if (result != null) {
-      setState(() {
-        if (isIncome) { _dateRangeIn = result; } else { _dateRangeOut = result; }
-      });
-    }
+    final result = await showDateRangePicker(context: context, firstDate: DateTime(2024), lastDate: now, initialDateRange: initial ?? DateTimeRange(start: now.subtract(const Duration(days: 30)), end: now),
+      builder: (context, child) => Theme(data: Theme.of(context).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFFB71C1C), onPrimary: Colors.white, surface: Colors.white)), child: child!));
+    if (result != null) { setState(() { if (isIncome) { _dateRangeIn = result; } else { _dateRangeOut = result; } }); }
   }
 
-  // FUNGSI CUT OFF 1 JANUARI
   Future<void> _resetAnnualPoints() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(children: [Icon(Icons.warning_rounded, color: Color(0xFFEF4444)), SizedBox(width: 8), Text('Reset Poin Tahunan', style: TextStyle(fontWeight: FontWeight.w700))]),
-        content: const Text('Tindakan ini akan MENGHANGUSKAN (menjadi 0) semua poin milik seluruh toko saat ini sesuai aturan Cut Off 1 Januari.\n\nApakah Anda sangat yakin?', style: TextStyle(height: 1.5, color: Color(0xFF4B5563))),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), elevation: 0), child: const Text('Ya, Reset Poin', style: TextStyle(color: Colors.white))),
-        ],
-      ),
-    );
+    final confirm = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Row(children: [Icon(Icons.warning_rounded, color: Color(0xFFEF4444)), SizedBox(width: 8), Text('Reset Poin Tahunan', style: TextStyle(fontWeight: FontWeight.w700))]),
+      content: const Text('Tindakan ini akan MENGHANGUSKAN (menjadi 0) semua poin milik seluruh toko saat ini sesuai aturan Cut Off 1 Januari.\n\nApakah Anda sangat yakin?', style: TextStyle(height: 1.5, color: Color(0xFF4B5563))),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal', style: TextStyle(color: Colors.grey))), ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), elevation: 0), child: const Text('Ya, Reset Poin', style: TextStyle(color: Colors.white)))],
+    ));
     if (confirm != true) return;
     setState(() => _isLoading = true);
     try {
@@ -115,9 +82,7 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
       await _admin.from('profiles').update({'points': 0}).neq('id', 'dummy');
       final List<Map<String, dynamic>> historyLogs = [];
       final now = DateTime.now().toIso8601String();
-      for (var u in users) {
-        historyLogs.add({'user_id': u['id'], 'amount': -(u['points'] as num).toInt(), 'description': 'Cut Off Poin Tahunan (1 Januari)', 'reference_type': 'SYSTEM_CUTOFF', 'created_at': now});
-      }
+      for (var u in users) { historyLogs.add({'user_id': u['id'], 'amount': -(u['points'] as num).toInt(), 'description': 'Cut Off Poin Tahunan (1 Januari)', 'reference_type': 'SYSTEM_CUTOFF', 'created_at': now}); }
       if (historyLogs.isNotEmpty) await _admin.from('point_history').insert(historyLogs);
       await _fetchReportData();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Poin tahunan berhasil direset!'), backgroundColor: Color(0xFF10B981)));
@@ -130,42 +95,47 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+      // [FIX] Center + maxWidth agar tidak melebar
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1000),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('Laporan & Analytics', style: TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w800, fontSize: 24)),
-            const SizedBox(height: 4),
-            const Text('Rekapitulasi pendapatan dan penukaran poin.', style: TextStyle(color: Colors.grey, fontSize: 14)),
-            const SizedBox(height: 24),
-            Container(
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]),
-              padding: const EdgeInsets.all(6),
-              child: TabBar(
-                controller: _tabController,
-                indicator: BoxDecoration(color: const Color(0xFFB71C1C).withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-                indicatorSize: TabBarIndicatorSize.tab,
-                dividerColor: Colors.transparent,
-                labelColor: const Color(0xFFB71C1C),
-                unselectedLabelColor: Colors.grey[500],
-                labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                tabs: const [Tab(text: 'Dashboard'), Tab(text: 'Pendapatan'), Tab(text: 'Penukaran')],
-              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Laporan & Analytics', style: TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w800, fontSize: 24)),
+                const SizedBox(height: 4),
+                const Text('Rekapitulasi pendapatan dan penukaran poin.', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                const SizedBox(height: 24),
+                Container(
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]),
+                  padding: const EdgeInsets.all(6),
+                  child: TabBar(
+                    controller: _tabController,
+                    indicator: BoxDecoration(color: const Color(0xFFB71C1C).withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerColor: Colors.transparent,
+                    labelColor: const Color(0xFFB71C1C),
+                    unselectedLabelColor: Colors.grey[500],
+                    labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                    unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    tabs: const [Tab(text: 'Dashboard'), Tab(text: 'Pendapatan'), Tab(text: 'Penukaran')],
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator(color: Color(0xFFB71C1C)))
+                  : TabBarView(controller: _tabController, children: [_buildDashboardTab(), _buildIncomeTab(), _buildRedeemTab()]),
             ),
           ]),
         ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: Color(0xFFB71C1C)))
-              : TabBarView(controller: _tabController, children: [_buildDashboardTab(), _buildIncomeTab(), _buildRedeemTab()]),
-        ),
-      ]),
+      ),
     );
   }
 
-  // ================= TAB 1: DASHBOARD =================
   Widget _buildDashboardTab() {
     int totalIn = 0; int totalOut = 0; Map<String, int> itemStats = {};
     for (var item in _historyData) {
@@ -226,44 +196,22 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
     );
   }
 
-  // ================= TAB 2: PENDAPATAN =================
   Widget _buildIncomeTab() {
     final bool isDesktop = MediaQuery.of(context).size.width >= 800;
     final incomeData = _historyData.where((item) {
       final amount = (item['amount'] as num?)?.toInt() ?? 0;
       if (amount <= 0) return false;
-      if (_searchInQuery.isNotEmpty) {
-        final name = (item['profiles']?['full_name'] ?? '').toString().toLowerCase();
-        if (!name.contains(_searchInQuery.toLowerCase())) return false;
-      }
-      if (_dateRangeIn != null && item['created_at'] != null) {
-        try {
-          final dt = DateTime.parse(item['created_at']).toLocal();
-          if (dt.isBefore(_dateRangeIn!.start) || dt.isAfter(_dateRangeIn!.end.add(const Duration(days: 1)))) return false;
-        } catch (_) {}
-      }
+      if (_searchInQuery.isNotEmpty) { final name = (item['profiles']?['full_name'] ?? '').toString().toLowerCase(); if (!name.contains(_searchInQuery.toLowerCase())) return false; }
+      if (_dateRangeIn != null && item['created_at'] != null) { try { final dt = DateTime.parse(item['created_at']).toLocal(); if (dt.isBefore(_dateRangeIn!.start) || dt.isAfter(_dateRangeIn!.end.add(const Duration(days: 1)))) return false; } catch (_) {} }
       return true;
     }).toList();
 
     return Column(children: [
-      _buildFilterBar(
-        searchCtrl: _searchInCtrl,
-        searchQuery: _searchInQuery,
-        onSearchChanged: (v) => setState(() => _searchInQuery = v),
-        dateRange: _dateRangeIn,
-        onPickDate: () => _pickDateRange(true),
-        onClearDate: () => setState(() => _dateRangeIn = null),
-        resultCount: incomeData.length,
-      ),
-      Expanded(
-        child: incomeData.isEmpty
-            ? const Center(child: Text('Tidak ada data pendapatan poin.', style: TextStyle(color: Colors.grey)))
-            : isDesktop ? _buildDesktopTable(incomeData, true) : ListView.builder(itemCount: incomeData.length, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), itemBuilder: (ctx, i) => _historyTile(incomeData[i], true)),
-      ),
+      _buildFilterBar(searchCtrl: _searchInCtrl, searchQuery: _searchInQuery, onSearchChanged: (v) => setState(() => _searchInQuery = v), dateRange: _dateRangeIn, onPickDate: () => _pickDateRange(true), onClearDate: () => setState(() => _dateRangeIn = null), resultCount: incomeData.length),
+      Expanded(child: incomeData.isEmpty ? const Center(child: Text('Tidak ada data pendapatan poin.', style: TextStyle(color: Colors.grey))) : isDesktop ? _buildDesktopTable(incomeData, true) : ListView.builder(itemCount: incomeData.length, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), itemBuilder: (ctx, i) => _historyTile(incomeData[i], true))),
     ]);
   }
 
-  // ================= TAB 3: PENUKARAN =================
   Widget _buildRedeemTab() {
     final bool isDesktop = MediaQuery.of(context).size.width >= 800;
     final redeemData = _historyData.where((item) {
@@ -273,125 +221,37 @@ class _ReportsPageState extends State<ReportsPage> with SingleTickerProviderStat
       final desc = item['description'] ?? '';
       if (_searchOutQuery.isNotEmpty && !name.contains(_searchOutQuery.toLowerCase())) return false;
       if (_selectedItemFilter != null && _selectedItemFilter != 'Semua Barang' && desc != _selectedItemFilter) return false;
-      if (_dateRangeOut != null && item['created_at'] != null) {
-        try {
-          final dt = DateTime.parse(item['created_at']).toLocal();
-          if (dt.isBefore(_dateRangeOut!.start) || dt.isAfter(_dateRangeOut!.end.add(const Duration(days: 1)))) return false;
-        } catch (_) {}
-      }
+      if (_dateRangeOut != null && item['created_at'] != null) { try { final dt = DateTime.parse(item['created_at']).toLocal(); if (dt.isBefore(_dateRangeOut!.start) || dt.isAfter(_dateRangeOut!.end.add(const Duration(days: 1)))) return false; } catch (_) {} }
       return true;
     }).toList();
 
     return Column(children: [
-      _buildFilterBar(
-        searchCtrl: _searchOutCtrl,
-        searchQuery: _searchOutQuery,
-        onSearchChanged: (v) => setState(() => _searchOutQuery = v),
-        dateRange: _dateRangeOut,
-        onPickDate: () => _pickDateRange(false),
-        onClearDate: () => setState(() => _dateRangeOut = null),
-        resultCount: redeemData.length,
-        extraWidget: SizedBox(
-          width: 180,
-          child: DropdownButtonFormField<String>(
-            value: _selectedItemFilter,
-            decoration: InputDecoration(filled: true, fillColor: Colors.white, contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)),
-            hint: const Text('Semua Barang', style: TextStyle(fontSize: 13)),
-            isExpanded: true,
-            icon: const Icon(Icons.filter_list_rounded, size: 18),
-            items: ['Semua Barang', ..._redeemedItems].map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis))).toList(),
-            onChanged: (v) => setState(() => _selectedItemFilter = v == 'Semua Barang' ? null : v),
-          ),
-        ),
-      ),
-      Expanded(
-        child: redeemData.isEmpty
-            ? const Center(child: Text('Tidak ada riwayat penukaran sesuai filter.', style: TextStyle(color: Colors.grey)))
-            : isDesktop ? _buildDesktopTable(redeemData, false) : ListView.builder(itemCount: redeemData.length, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), itemBuilder: (ctx, i) => _historyTile(redeemData[i], false)),
-      ),
+      _buildFilterBar(searchCtrl: _searchOutCtrl, searchQuery: _searchOutQuery, onSearchChanged: (v) => setState(() => _searchOutQuery = v), dateRange: _dateRangeOut, onPickDate: () => _pickDateRange(false), onClearDate: () => setState(() => _dateRangeOut = null), resultCount: redeemData.length,
+        extraWidget: SizedBox(width: 180, child: DropdownButtonFormField<String>(value: _selectedItemFilter, decoration: InputDecoration(filled: true, fillColor: Colors.white, contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)), hint: const Text('Semua Barang', style: TextStyle(fontSize: 13)), isExpanded: true, icon: const Icon(Icons.filter_list_rounded, size: 18), items: ['Semua Barang', ..._redeemedItems].map((v) => DropdownMenuItem(value: v, child: Text(v, style: const TextStyle(fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis))).toList(), onChanged: (v) => setState(() => _selectedItemFilter = v == 'Semua Barang' ? null : v)))),
+      Expanded(child: redeemData.isEmpty ? const Center(child: Text('Tidak ada riwayat penukaran sesuai filter.', style: TextStyle(color: Colors.grey))) : isDesktop ? _buildDesktopTable(redeemData, false) : ListView.builder(itemCount: redeemData.length, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), itemBuilder: (ctx, i) => _historyTile(redeemData[i], false))),
     ]);
   }
 
-  // ======= FILTER BAR REUSABLE =======
-  Widget _buildFilterBar({
-    required TextEditingController searchCtrl,
-    required String searchQuery,
-    required ValueChanged<String> onSearchChanged,
-    required DateTimeRange? dateRange,
-    required VoidCallback onPickDate,
-    required VoidCallback onClearDate,
-    required int resultCount,
-    Widget? extraWidget,
-  }) {
+  Widget _buildFilterBar({required TextEditingController searchCtrl, required String searchQuery, required ValueChanged<String> onSearchChanged, required DateTimeRange? dateRange, required VoidCallback onPickDate, required VoidCallback onClearDate, required int resultCount, Widget? extraWidget}) {
     final fmt = DateFormat('dd MMM yyyy');
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Column(children: [
         Row(children: [
-          // Search
-          Expanded(
-            child: TextField(
-              controller: searchCtrl,
-              onChanged: onSearchChanged,
-              decoration: InputDecoration(
-                hintText: 'Cari nama toko...', hintStyle: const TextStyle(fontSize: 13),
-                prefixIcon: const Icon(Icons.search, color: Colors.grey, size: 20),
-                suffixIcon: searchQuery.isNotEmpty ? IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () { searchCtrl.clear(); onSearchChanged(''); }) : null,
-                filled: true, fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              ),
-            ),
-          ),
+          Expanded(child: TextField(controller: searchCtrl, onChanged: onSearchChanged, decoration: InputDecoration(hintText: 'Cari nama toko...', hintStyle: const TextStyle(fontSize: 13), prefixIcon: const Icon(Icons.search, color: Colors.grey, size: 20), suffixIcon: searchQuery.isNotEmpty ? IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () { searchCtrl.clear(); onSearchChanged(''); }) : null, filled: true, fillColor: Colors.white, contentPadding: const EdgeInsets.symmetric(vertical: 0), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)))),
           const SizedBox(width: 10),
-          // Date Picker
-          GestureDetector(
-            onTap: onPickDate,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-              decoration: BoxDecoration(
-                color: dateRange != null ? const Color(0xFFB71C1C).withOpacity(0.08) : Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: dateRange != null ? const Color(0xFFB71C1C).withOpacity(0.3) : Colors.transparent),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.date_range_rounded, size: 18, color: dateRange != null ? const Color(0xFFB71C1C) : Colors.grey),
-                const SizedBox(width: 6),
-                Text(
-                  dateRange != null ? '${fmt.format(dateRange.start)} - ${fmt.format(dateRange.end)}' : 'Pilih Tanggal',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dateRange != null ? const Color(0xFFB71C1C) : const Color(0xFF6B7280)),
-                ),
-                if (dateRange != null) ...[
-                  const SizedBox(width: 6),
-                  GestureDetector(
-                    onTap: onClearDate,
-                    child: const Icon(Icons.close, size: 16, color: Color(0xFFB71C1C)),
-                  ),
-                ],
-              ]),
-            ),
-          ),
+          GestureDetector(onTap: onPickDate, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11), decoration: BoxDecoration(color: dateRange != null ? const Color(0xFFB71C1C).withOpacity(0.08) : Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: dateRange != null ? const Color(0xFFB71C1C).withOpacity(0.3) : Colors.transparent)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.date_range_rounded, size: 18, color: dateRange != null ? const Color(0xFFB71C1C) : Colors.grey), const SizedBox(width: 6), Text(dateRange != null ? '${fmt.format(dateRange.start)} - ${fmt.format(dateRange.end)}' : 'Pilih Tanggal', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dateRange != null ? const Color(0xFFB71C1C) : const Color(0xFF6B7280))), if (dateRange != null) ...[const SizedBox(width: 6), GestureDetector(onTap: onClearDate, child: const Icon(Icons.close, size: 16, color: Color(0xFFB71C1C)))]]))),
           if (extraWidget != null) ...[const SizedBox(width: 10), extraWidget],
         ]),
-        // Result count
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(children: [
-            Text('$resultCount hasil', style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w500)),
-            if (dateRange != null || searchQuery.isNotEmpty) ...[
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () { searchCtrl.clear(); onSearchChanged(''); onClearDate(); },
-                child: const Text('Reset filter', style: TextStyle(fontSize: 12, color: Color(0xFFB71C1C), fontWeight: FontWeight.w600)),
-              ),
-            ],
-          ]),
-        ),
+        Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: [
+          Text('$resultCount hasil', style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w500)),
+          if (dateRange != null || searchQuery.isNotEmpty) ...[const SizedBox(width: 8), GestureDetector(onTap: () { searchCtrl.clear(); onSearchChanged(''); onClearDate(); }, child: const Text('Reset filter', style: TextStyle(fontSize: 12, color: Color(0xFFB71C1C), fontWeight: FontWeight.w600)))],
+        ])),
       ]),
     );
   }
 
-  // ======= DESKTOP TABLE =======
   Widget _buildDesktopTable(List<Map<String, dynamic>> data, bool isIn) {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),

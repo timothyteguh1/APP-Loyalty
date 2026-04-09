@@ -27,6 +27,13 @@ class _ConversionPageState extends State<ConversionPage> {
       final config = await _admin.from('app_config').select('value').eq('key', 'default_conversion_rate').maybeSingle();
       if (config != null) _globalRate = config['value'];
       final users = await _admin.from('profiles').select().eq('approval_status', 'APPROVED').order('full_name');
+      debugPrint('=== KONVERSI: found ${users.length} approved users ===');
+      if (users.isEmpty) {
+        // Fallback: cek semua profiles
+        final allUsers = await _admin.from('profiles').select('id, full_name, approval_status');
+        debugPrint('=== ALL PROFILES: ${allUsers.length} total ===');
+        for (var u in allUsers) { debugPrint('  ${u['full_name']} -> ${u['approval_status']}'); }
+      }
       if (mounted) {
         setState(() {
           _approvedUsers = List<Map<String, dynamic>>.from(users);
