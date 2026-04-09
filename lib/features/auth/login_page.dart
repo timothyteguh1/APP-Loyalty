@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../controllers/auth_controller.dart';
+import '../../utils/layout_state.dart'; // <-- IMPORT GLOBAL STATE
 import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -79,157 +80,174 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Background gradient
-          Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF8B0000), Color(0xFFB71C1C), Color(0xFFD32F2F)]))),
+    return ValueListenableBuilder<bool>(
+      valueListenable: LayoutState().isDesktopMode,
+      builder: (context, isDesktop, child) {
+        return Scaffold(
+          body: Stack(
+            children: [
+              Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF8B0000), Color(0xFFB71C1C), Color(0xFFD32F2F)]))),
+              ...List.generate(6, (i) => AnimatedBuilder(
+                animation: _bgAnim,
+                builder: (_, __) {
+                  final p = _bgAnim.value;
+                  return Positioned(
+                    left: (i * 70.0 + 10) + (p * 25 * (i.isEven ? 1 : -1)),
+                    top: (i * 130.0 - 60) + (p * 35 * (i.isOdd ? 1 : -1)),
+                    child: Container(width: 80.0 + i * 50, height: 80.0 + i * 50, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.03 + i * 0.008))),
+                  );
+                },
+              )),
+              Positioned.fill(child: CustomPaint(painter: _DotPainter())),
 
-          // Floating circles
-          ...List.generate(6, (i) => AnimatedBuilder(
-            animation: _bgAnim,
-            builder: (_, __) {
-              final p = _bgAnim.value;
-              return Positioned(
-                left: (i * 70.0 + 10) + (p * 25 * (i.isEven ? 1 : -1)),
-                top: (i * 130.0 - 60) + (p * 35 * (i.isOdd ? 1 : -1)),
-                child: Container(width: 80.0 + i * 50, height: 80.0 + i * 50, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.03 + i * 0.008))),
-              );
-            },
-          )),
-
-          Positioned.fill(child: CustomPaint(painter: _DotPainter())),
-
-          // Content
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 28),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+              SafeArea(
+                child: Stack(
                   children: [
-                    // Logo
-                    ScaleTransition(
-                      scale: _logoScale,
-                      child: Container(
-                        width: 88, height: 88,
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(26), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 30, offset: const Offset(0, 10))]),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(26),
-                          child: Image.asset('assets/images/logo.png', fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => const Center(child: Text('U', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w900, color: Color(0xFFB71C1C))))),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Title
-                    FadeTransition(
-                      opacity: _titleFade,
-                      child: Column(children: [
-                        const Text('Upsol Loyalty', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.5)),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.1))),
-                          child: const Text('Program Loyalti Toko', style: TextStyle(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.w500)),
-                        ),
-                      ]),
-                    ),
-                    const SizedBox(height: 36),
-
-                    // Form Card
-                    SlideTransition(
-                      position: _cardSlide,
-                      child: FadeTransition(
-                        opacity: _cardFade,
-                        child: Container(
-                          padding: const EdgeInsets.all(28),
-                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 40, offset: const Offset(0, 15))]),
+                    // --- 1. FORM KONTEN (Pindah ke sini agar menjadi layer bawah) ---
+                    Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 28),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: isDesktop ? 500 : double.infinity),
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Row(children: [
-                                Container(width: 4, height: 24, decoration: BoxDecoration(color: const Color(0xFFB71C1C), borderRadius: BorderRadius.circular(2))),
-                                const SizedBox(width: 10),
-                                const Text('Masuk ke Akun', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
-                              ]),
-                              const SizedBox(height: 24),
-
-                              _buildField(label: 'Email atau No HP', controller: _identifierController, focusNode: _identifierFocus, isFocused: _idFocused, hint: 'email@contoh.com atau 08xxx', icon: Icons.person_outline_rounded, action: TextInputAction.next, onSubmit: (_) => FocusScope.of(context).requestFocus(_passwordFocus)),
-                              const SizedBox(height: 20),
-                              _buildField(label: 'Password', controller: _passwordController, focusNode: _passwordFocus, isFocused: _pwFocused, hint: 'Masukkan password', icon: Icons.lock_outline_rounded, isPassword: true, action: TextInputAction.done, onSubmit: (_) => _handleLogin()),
-
-                              // Error
-                              AnimatedSize(
-                                duration: const Duration(milliseconds: 300), curve: Curves.easeOut,
-                                child: _error != null ? Padding(
-                                  padding: const EdgeInsets.only(top: 16),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                    decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFFFCDD2))),
-                                    child: Row(children: [
-                                      Container(width: 28, height: 28, decoration: BoxDecoration(color: const Color(0xFFEF4444).withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.close_rounded, color: Color(0xFFEF4444), size: 16)),
-                                      const SizedBox(width: 10),
-                                      Expanded(child: Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 13, fontWeight: FontWeight.w500))),
-                                    ]),
-                                  ),
-                                ) : const SizedBox.shrink(),
-                              ),
-                              const SizedBox(height: 28),
-
-                              // Button
+                              const SizedBox(height: 50), 
                               ScaleTransition(
-                                scale: _btnScale,
-                                child: SizedBox(
-                                  width: double.infinity, height: 54,
-                                  child: ElevatedButton(
-                                    onPressed: _isProcessing ? null : _handleLogin,
-                                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB71C1C), foregroundColor: Colors.white, disabledBackgroundColor: const Color(0xFFB71C1C).withOpacity(0.6), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                                    child: AnimatedSwitcher(
-                                      duration: const Duration(milliseconds: 200),
-                                      child: _isProcessing
-                                        ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white.withOpacity(0.9), strokeWidth: 2.5)), const SizedBox(width: 12), const Text('Memverifikasi...', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600))])
-                                        : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text('Masuk', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)), SizedBox(width: 8), Icon(Icons.arrow_forward_rounded, size: 20)]),
+                                scale: _logoScale,
+                                child: Container(
+                                  width: 88, height: 88,
+                                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(26), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 30, offset: const Offset(0, 10))]),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(26),
+                                    child: Image.asset('assets/images/logo.png', fit: BoxFit.contain,
+                                      errorBuilder: (_, __, ___) => const Center(child: Text('U', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w900, color: Color(0xFFB71C1C))))),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              FadeTransition(
+                                opacity: _titleFade,
+                                child: Column(children: [
+                                  const Text('Upsol Loyalty', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.5)),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.1))),
+                                    child: const Text('Program Loyalti Toko', style: TextStyle(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.w500)),
+                                  ),
+                                ]),
+                              ),
+                              const SizedBox(height: 36),
+                              SlideTransition(
+                                position: _cardSlide,
+                                child: FadeTransition(
+                                  opacity: _cardFade,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(28),
+                                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 40, offset: const Offset(0, 15))]),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(children: [
+                                          Container(width: 4, height: 24, decoration: BoxDecoration(color: const Color(0xFFB71C1C), borderRadius: BorderRadius.circular(2))),
+                                          const SizedBox(width: 10),
+                                          const Text('Masuk ke Akun', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+                                        ]),
+                                        const SizedBox(height: 24),
+                                        _buildField(label: 'Email atau No HP', controller: _identifierController, focusNode: _identifierFocus, isFocused: _idFocused, hint: 'email@contoh.com atau 08xxx', icon: Icons.person_outline_rounded, action: TextInputAction.next, onSubmit: (_) => FocusScope.of(context).requestFocus(_passwordFocus)),
+                                        const SizedBox(height: 20),
+                                        _buildField(label: 'Password', controller: _passwordController, focusNode: _passwordFocus, isFocused: _pwFocused, hint: 'Masukkan password', icon: Icons.lock_outline_rounded, isPassword: true, action: TextInputAction.done, onSubmit: (_) => _handleLogin()),
+                                        AnimatedSize(
+                                          duration: const Duration(milliseconds: 300), curve: Curves.easeOut,
+                                          child: _error != null ? Padding(
+                                            padding: const EdgeInsets.only(top: 16),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                              decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(14), border: Border.all(color: const Color(0xFFFFCDD2))),
+                                              child: Row(children: [
+                                                Container(width: 28, height: 28, decoration: BoxDecoration(color: const Color(0xFFEF4444).withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.close_rounded, color: Color(0xFFEF4444), size: 16)),
+                                                const SizedBox(width: 10),
+                                                Expanded(child: Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C), fontSize: 13, fontWeight: FontWeight.w500))),
+                                              ]),
+                                            ),
+                                          ) : const SizedBox.shrink(),
+                                        ),
+                                        const SizedBox(height: 28),
+                                        ScaleTransition(
+                                          scale: _btnScale,
+                                          child: SizedBox(
+                                            width: double.infinity, height: 54,
+                                            child: ElevatedButton(
+                                              onPressed: _isProcessing ? null : _handleLogin,
+                                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB71C1C), foregroundColor: Colors.white, disabledBackgroundColor: const Color(0xFFB71C1C).withOpacity(0.6), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                                              child: AnimatedSwitcher(
+                                                duration: const Duration(milliseconds: 200),
+                                                child: _isProcessing
+                                                  ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white.withOpacity(0.9), strokeWidth: 2.5)), const SizedBox(width: 12), const Text('Memverifikasi...', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600))])
+                                                  : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text('Masuk', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)), SizedBox(width: 8), Icon(Icons.arrow_forward_rounded, size: 20)]),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ),
                               ),
+                              const SizedBox(height: 28),
+                              FadeTransition(
+                                opacity: _cardFade,
+                                child: GestureDetector(
+                                  onTap: () => Navigator.push(context, PageRouteBuilder(pageBuilder: (_, a, __) => const RegisterPage(), transitionsBuilder: (_, a, __, c) => SlideTransition(position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)), child: c), transitionDuration: const Duration(milliseconds: 400))),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+                                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.15))),
+                                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                      Text('Belum punya akun?', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13)),
+                                      const SizedBox(width: 6),
+                                      const Text('Daftar Sekarang', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 16),
+                                    ]),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              FadeTransition(opacity: _cardFade, child: Text('Upsol Loyalty v2.0', style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.3)))),
+                              const SizedBox(height: 20),
                             ],
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 28),
 
-                    // Register link
-                    FadeTransition(
-                      opacity: _cardFade,
-                      child: GestureDetector(
-                        onTap: () => Navigator.push(context, PageRouteBuilder(pageBuilder: (_, a, __) => const RegisterPage(), transitionsBuilder: (_, a, __, c) => SlideTransition(position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).animate(CurvedAnimation(parent: a, curve: Curves.easeOutCubic)), child: c), transitionDuration: const Duration(milliseconds: 400))),
+                    // --- 2. TOMBOL SWITCH MODE (Pindah ke paling bawah agar layernya di paling atas) ---
+                    Positioned(
+                      top: 16, right: 24,
+                      child: InkWell(
+                        onTap: () => LayoutState().toggleMode(),
+                        borderRadius: BorderRadius.circular(20),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.15))),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Text('Belum punya akun?', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13)),
-                            const SizedBox(width: 6),
-                            const Text('Daftar Sekarang', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 16),
-                          ]),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3))),
+                          child: Row(
+                            children: [
+                              Icon(isDesktop ? Icons.phone_android_rounded : Icons.computer_rounded, color: Colors.white, size: 16),
+                              const SizedBox(width: 6),
+                              Text(isDesktop ? "Mode HP" : "Mode Web", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    FadeTransition(opacity: _cardFade, child: Text('Upsol Loyalty v2.0', style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.3)))),
-                    const SizedBox(height: 20),
                   ],
                 ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      }
     );
   }
 

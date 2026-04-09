@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../utils/ui_helpers.dart';
+import '../../utils/layout_state.dart'; // <-- IMPORT GLOBAL STATE
 import 'reward_list_page.dart';
 import 'detail_reward_page.dart';
 
@@ -19,6 +20,9 @@ class _RewardPageState extends State<RewardPage> {
   bool _isLoadingDeals = true;
   bool _isLoadingPoints = true;
 
+  // =======================================================================
+  // LOGIKA DATA (TIDAK ADA YANG BERUBAH)
+  // =======================================================================
   @override
   void initState() {
     super.initState();
@@ -56,7 +60,6 @@ class _RewardPageState extends State<RewardPage> {
           .limit(1);
 
       if (mounted) {
-        // Filter stok > 0 di client
         final filtered = List<Map<String, dynamic>>.from(data).where((item) {
           return ((item['stock'] as num?)?.toInt() ?? 0) > 0;
         }).toList();
@@ -71,17 +74,39 @@ class _RewardPageState extends State<RewardPage> {
     }
   }
 
+  // =======================================================================
+  // UI RENDERER: MENDETEKSI MODE WEB / HP
+  // =======================================================================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      body: RefreshIndicator(
-        color: const Color(0xFFD32F2F),
-        onRefresh: _fetchAll,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.only(bottom: 120),
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(children: [
+    return ValueListenableBuilder<bool>(
+      valueListenable: LayoutState().isDesktopMode,
+      builder: (context, isDesktop, child) {
+        return Scaffold(
+          backgroundColor: const Color(0xFFF5F5F5),
+          body: RefreshIndicator(
+            color: const Color(0xFFD32F2F),
+            onRefresh: _fetchAll,
+            // Jika Desktop, bungkus dengan Center agar tidak melebar ke ujung layar
+            child: isDesktop ? Center(child: _buildContent(isDesktop: true)) : _buildContent(isDesktop: false),
+          ),
+        );
+      },
+    );
+  }
+
+  // =======================================================================
+  // KONTEN UTAMA (Satu Kode untuk Keduanya, hanya dibatasi lebarnya di Web)
+  // =======================================================================
+  Widget _buildContent({required bool isDesktop}) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 120),
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: ConstrainedBox(
+        // BATAS LEBAR: Jika Web maksimal 800px, jika HP bebas (karena layar HP kecil)
+        constraints: BoxConstraints(maxWidth: isDesktop ? 800 : double.infinity),
+        child: Column(
+          children: [
             // --- HEADER & CARD POIN ---
             Stack(
               clipBehavior: Clip.none,
@@ -174,7 +199,7 @@ class _RewardPageState extends State<RewardPage> {
                         : _dealCard(_bestDeals[0]),
               ]),
             ),
-          ]),
+          ],
         ),
       ),
     );

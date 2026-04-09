@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../controllers/auth_controller.dart';
 import '../../utils/ui_helpers.dart';
+import '../../utils/layout_state.dart'; // <-- IMPORT GLOBAL STATE
 import 'login_page.dart';
 
 class RejectedPage extends StatefulWidget {
@@ -110,155 +111,218 @@ class _RejectedPageState extends State<RejectedPage> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 400),
-        transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: SlideTransition(position: Tween<Offset>(begin: const Offset(0.05, 0), end: Offset.zero).animate(anim), child: child)),
-        child: _isEditing ? _buildEditView() : _buildInfoView(),
-      ),
+    return ValueListenableBuilder<bool>(
+      valueListenable: LayoutState().isDesktopMode,
+      builder: (context, isDesktop, child) {
+        return Scaffold(
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 400),
+            transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: SlideTransition(position: Tween<Offset>(begin: const Offset(0.05, 0), end: Offset.zero).animate(anim), child: child)),
+            child: _isEditing ? _buildEditView(isDesktop) : _buildInfoView(isDesktop),
+          ),
+        );
+      }
     );
   }
 
   // ==================== INFO VIEW ====================
-  Widget _buildInfoView() {
+  Widget _buildInfoView(bool isDesktop) {
     final reason = widget.profileData['rejection_reason'] ?? 'Tidak ada alasan spesifik dari admin.';
     return Stack(key: const ValueKey('info'), children: [
       Container(height: 280, decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFB71C1C), Color(0xFFE53935)]))),
 
       SafeArea(
-        child: SingleChildScrollView(child: Column(children: [
-          const SizedBox(height: 40),
+        child: Stack(
+          children: [
+            // --- KONTEN UTAMA ---
+            Positioned.fill(
+              child: SingleChildScrollView(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: isDesktop ? 600 : double.infinity),
+                    child: Column(children: [
+                      const SizedBox(height: 50), // Spasi tombol switch
 
-          // Icon
-          ScaleTransition(scale: _iconScale, child: Container(
-            width: 100, height: 100,
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 30, offset: const Offset(0, 10))]),
-            child: const Icon(Icons.cancel_rounded, size: 52, color: Color(0xFFEF4444)),
-          )),
-          const SizedBox(height: 24),
+                      // Icon
+                      ScaleTransition(scale: _iconScale, child: Container(
+                        width: 100, height: 100,
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 30, offset: const Offset(0, 10))]),
+                        child: const Icon(Icons.cancel_rounded, size: 52, color: Color(0xFFEF4444)),
+                      )),
+                      const SizedBox(height: 24),
 
-          FadeTransition(opacity: _fade, child: SlideTransition(position: _slide, child: Column(children: [
-            const Text('Pendaftaran Ditolak', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
-            const SizedBox(height: 6),
-            Text('Mohon maaf, data Anda belum bisa disetujui', style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.8))),
-          ]))),
-          const SizedBox(height: 32),
+                      FadeTransition(opacity: _fade, child: SlideTransition(position: _slide, child: Column(children: [
+                        const Text('Pendaftaran Ditolak', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
+                        const SizedBox(height: 6),
+                        Text('Mohon maaf, data Anda belum bisa disetujui', style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.8))),
+                      ]))),
+                      const SizedBox(height: 32),
 
-          // Content
-          FadeTransition(opacity: _fade, child: SlideTransition(position: _slide, child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 24, offset: const Offset(0, 8))]),
-            child: Column(children: [
-              // Reason box
-              Container(
-                width: double.infinity, padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: const Color(0xFFFFF8E1), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFFFE082))),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Container(width: 28, height: 28, decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFF59E0B))),
-                    const SizedBox(width: 10),
-                    Text('Alasan Penolakan', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.orange[900])),
-                  ]),
-                  const SizedBox(height: 10),
-                  Text(reason, style: TextStyle(fontSize: 14, color: Colors.brown[700], height: 1.6)),
-                ]),
+                      // Content
+                      FadeTransition(opacity: _fade, child: SlideTransition(position: _slide, child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 24),
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 24, offset: const Offset(0, 8))]),
+                        child: Column(children: [
+                          // Reason box
+                          Container(
+                            width: double.infinity, padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(color: const Color(0xFFFFF8E1), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFFFE082))),
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Row(children: [
+                                Container(width: 28, height: 28, decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFF59E0B))),
+                                const SizedBox(width: 10),
+                                Text('Alasan Penolakan', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.orange[900])),
+                              ]),
+                              const SizedBox(height: 10),
+                              Text(reason, style: TextStyle(fontSize: 14, color: Colors.brown[700], height: 1.6)),
+                            ]),
+                          ),
+                          const SizedBox(height: 28),
+
+                          // Fix button
+                          SizedBox(width: double.infinity, height: 54, child: ElevatedButton(
+                            onPressed: () => setState(() => _isEditing = true),
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB71C1C), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                            child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.edit_rounded, size: 20), SizedBox(width: 10), Text('Perbaiki Data & Kirim Ulang', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15))]),
+                          )),
+                          const SizedBox(height: 12),
+                          SizedBox(width: double.infinity, height: 48, child: OutlinedButton(
+                            onPressed: _logout,
+                            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF6B7280), side: BorderSide(color: Colors.grey[300]!), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                            child: const Text('Logout', style: TextStyle(fontWeight: FontWeight.w600)),
+                          )),
+                        ]),
+                      ))),
+                      const SizedBox(height: 40),
+                    ]),
+                  ),
+                ),
               ),
-              const SizedBox(height: 28),
+            ),
 
-              // Fix button
-              SizedBox(width: double.infinity, height: 54, child: ElevatedButton(
-                onPressed: () => setState(() => _isEditing = true),
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB71C1C), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.edit_rounded, size: 20), SizedBox(width: 10), Text('Perbaiki Data & Kirim Ulang', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15))]),
-              )),
-              const SizedBox(height: 12),
-              SizedBox(width: double.infinity, height: 48, child: OutlinedButton(
-                onPressed: _logout,
-                style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF6B7280), side: BorderSide(color: Colors.grey[300]!), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                child: const Text('Logout', style: TextStyle(fontWeight: FontWeight.w600)),
-              )),
-            ]),
-          ))),
-          const SizedBox(height: 40),
-        ])),
+            // --- TOMBOL SWITCH MODE ---
+            Positioned(
+              top: 16, right: 24,
+              child: InkWell(
+                onTap: () => LayoutState().toggleMode(),
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3))),
+                  child: Row(
+                    children: [
+                      Icon(isDesktop ? Icons.phone_android_rounded : Icons.computer_rounded, color: Colors.white, size: 16),
+                      const SizedBox(width: 6),
+                      Text(isDesktop ? "Mode HP" : "Mode Web", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     ]);
   }
 
   // ==================== EDIT VIEW ====================
-  Widget _buildEditView() {
+  Widget _buildEditView(bool isDesktop) {
     return Scaffold(
       key: const ValueKey('edit'),
       backgroundColor: const Color(0xFFF5F5F5),
       body: Stack(children: [
         Container(height: 140, decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFB71C1C), Color(0xFFD32F2F)]))),
-        SafeArea(child: Column(children: [
-          // Header
-          Padding(padding: const EdgeInsets.fromLTRB(8, 4, 20, 0), child: Row(children: [
-            IconButton(onPressed: () => setState(() => _isEditing = false), icon: const Icon(Icons.arrow_back_rounded, color: Colors.white)),
-            const SizedBox(width: 4),
-            const Expanded(child: Text('Perbaiki Data', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700))),
-          ])),
-          const SizedBox(height: 12),
-
-          // Form
-          Expanded(child: Container(
-            decoration: const BoxDecoration(color: Color(0xFFF5F5F5), borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-            child: SingleChildScrollView(padding: const EdgeInsets.all(24), child: Column(children: [
-              _editCard([
-                _f('Nama Toko *', _namaTokoCtrl, Icons.storefront_rounded),
-                _f('Nama PIC *', _picNameCtrl, Icons.person_outline_rounded),
-                _f('No HP *', _phoneCtrl, Icons.phone_android_rounded, kb: TextInputType.phone),
-                _f('Alamat Toko *', _addressCtrl, Icons.location_on_outlined, lines: 2),
-                // Domisili
-                Padding(padding: const EdgeInsets.only(bottom: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('Domisili *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    value: _domisili,
-                    decoration: _dec(Icons.map_outlined),
-                    items: _domList.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                    onChanged: (v) => setState(() => _domisili = v),
+        SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: isDesktop ? 800 : double.infinity),
+              child: Column(children: [
+                // Header
+                Padding(padding: const EdgeInsets.fromLTRB(8, 4, 20, 0), child: Row(children: [
+                  IconButton(onPressed: () => setState(() => _isEditing = false), icon: const Icon(Icons.arrow_back_rounded, color: Colors.white)),
+                  const SizedBox(width: 4),
+                  const Expanded(child: Text('Perbaiki Data', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700))),
+                  
+                  // Tombol Switch di Edit View
+                  InkWell(
+                    onTap: () => LayoutState().toggleMode(),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3))),
+                      child: Row(
+                        children: [
+                          Icon(isDesktop ? Icons.phone_android_rounded : Icons.computer_rounded, color: Colors.white, size: 14),
+                          const SizedBox(width: 4),
+                          Text(isDesktop ? "HP" : "Web", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
                   ),
                 ])),
-                _f('Nomor KTP *', _ktpCtrl, Icons.credit_card_rounded, kb: TextInputType.number),
-              ]),
-              const SizedBox(height: 16),
+                const SizedBox(height: 12),
 
-              // KTP Image
-              _editCard([
-                const Text('Foto KTP', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
-                const SizedBox(height: 10),
-                GestureDetector(onTap: _pickKtp, child: Container(
-                  width: double.infinity, height: 160,
-                  decoration: BoxDecoration(color: const Color(0xFFF8F9FC), borderRadius: BorderRadius.circular(14), border: Border.all(color: _newKtpBytes != null ? const Color(0xFF10B981) : Colors.grey[300]!, width: _newKtpBytes != null ? 2 : 1)),
-                  child: ClipRRect(borderRadius: BorderRadius.circular(13),
-                    child: _newKtpBytes != null
-                      ? Stack(fit: StackFit.expand, children: [Image.memory(_newKtpBytes!, fit: BoxFit.cover), Positioned(top: 8, right: 8, child: Container(width: 28, height: 28, decoration: const BoxDecoration(color: Color(0xFF10B981), shape: BoxShape.circle), child: const Icon(Icons.check_rounded, color: Colors.white, size: 18)))])
-                      : _existingKtpUrl != null && _existingKtpUrl!.isNotEmpty
-                        ? Stack(fit: StackFit.expand, children: [Image.network(_existingKtpUrl!, fit: BoxFit.cover), Positioned(bottom: 8, right: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)), child: const Text('Tap untuk ganti', style: TextStyle(color: Colors.white, fontSize: 11))))])
-                        : Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.add_photo_alternate_rounded, size: 36, color: Colors.grey[400]), const SizedBox(height: 8), Text('Tap untuk upload', style: TextStyle(color: Colors.grey[500], fontSize: 13))]),
-                  ),
+                // Form
+                Expanded(child: Container(
+                  decoration: const BoxDecoration(color: Color(0xFFF5F5F5), borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+                  child: SingleChildScrollView(padding: const EdgeInsets.all(24), child: Column(children: [
+                    _editCard([
+                      _f('Nama Toko *', _namaTokoCtrl, Icons.storefront_rounded),
+                      _f('Nama PIC *', _picNameCtrl, Icons.person_outline_rounded),
+                      _f('No HP *', _phoneCtrl, Icons.phone_android_rounded, kb: TextInputType.phone),
+                      _f('Alamat Toko *', _addressCtrl, Icons.location_on_outlined, lines: 2),
+                      // Domisili
+                      Padding(padding: const EdgeInsets.only(bottom: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        const Text('Domisili *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          value: _domisili,
+                          decoration: _dec(Icons.map_outlined),
+                          items: _domList.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                          onChanged: (v) => setState(() => _domisili = v),
+                        ),
+                      ])),
+                      _f('Nomor KTP *', _ktpCtrl, Icons.credit_card_rounded, kb: TextInputType.number),
+                    ]),
+                    const SizedBox(height: 16),
+
+                    // KTP Image
+                    _editCard([
+                      const Text('Foto KTP', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
+                      const SizedBox(height: 10),
+                      GestureDetector(onTap: _pickKtp, child: Container(
+                        width: double.infinity, height: 160,
+                        decoration: BoxDecoration(color: const Color(0xFFF8F9FC), borderRadius: BorderRadius.circular(14), border: Border.all(color: _newKtpBytes != null ? const Color(0xFF10B981) : Colors.grey[300]!, width: _newKtpBytes != null ? 2 : 1)),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(13),
+                          child: _newKtpBytes != null
+                            ? Stack(fit: StackFit.expand, children: [Image.memory(_newKtpBytes!, fit: BoxFit.cover), Positioned(top: 8, right: 8, child: Container(width: 28, height: 28, decoration: const BoxDecoration(color: Color(0xFF10B981), shape: BoxShape.circle), child: const Icon(Icons.check_rounded, color: Colors.white, size: 18)))])
+                            : _existingKtpUrl != null && _existingKtpUrl!.isNotEmpty
+                              ? Stack(fit: StackFit.expand, children: [Image.network(_existingKtpUrl!, fit: BoxFit.cover), Positioned(bottom: 8, right: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)), child: const Text('Tap untuk ganti', style: TextStyle(color: Colors.white, fontSize: 11))))])
+                              : Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.add_photo_alternate_rounded, size: 36, color: Colors.grey[400]), const SizedBox(height: 8), Text('Tap untuk upload', style: TextStyle(color: Colors.grey[500], fontSize: 13))]),
+                        ),
+                      )),
+                    ]),
+                    const SizedBox(height: 30),
+                  ])),
                 )),
-              ]),
-              const SizedBox(height: 30),
-            ])),
-          )),
 
-          // Bottom
-          Container(
-            color: const Color(0xFFF5F5F5),
-            padding: EdgeInsets.fromLTRB(24, 12, 24, MediaQuery.of(context).padding.bottom + 16),
-            child: SizedBox(width: double.infinity, height: 54, child: ElevatedButton(
-              onPressed: _isSaving ? null : _resubmit,
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB71C1C), foregroundColor: Colors.white, disabledBackgroundColor: const Color(0xFFB71C1C).withOpacity(0.5), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-              child: _isSaving
-                ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white.withOpacity(0.9), strokeWidth: 2.5)), const SizedBox(width: 12), const Text('Mengirim...', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15))])
-                : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.send_rounded, size: 20), SizedBox(width: 10), Text('Kirim Ulang', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15))]),
-            )),
+                // Bottom
+                Container(
+                  color: const Color(0xFFF5F5F5),
+                  padding: EdgeInsets.fromLTRB(24, 12, 24, MediaQuery.of(context).padding.bottom + 16),
+                  child: SizedBox(width: double.infinity, height: 54, child: ElevatedButton(
+                    onPressed: _isSaving ? null : _resubmit,
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB71C1C), foregroundColor: Colors.white, disabledBackgroundColor: const Color(0xFFB71C1C).withOpacity(0.5), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                    child: _isSaving
+                      ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white.withOpacity(0.9), strokeWidth: 2.5)), const SizedBox(width: 12), const Text('Mengirim...', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15))])
+                      : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.send_rounded, size: 20), SizedBox(width: 10), Text('Kirim Ulang', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15))]),
+                  )),
+                ),
+              ]),
+            ),
           ),
-        ])),
+        ),
       ]),
     );
   }
