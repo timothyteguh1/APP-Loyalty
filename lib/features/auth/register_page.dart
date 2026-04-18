@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../controllers/auth_controller.dart';
-import '../../utils/layout_state.dart'; // <-- IMPORT GLOBAL STATE
+import '../../utils/layout_state.dart';
 import '../../utils/ui_helpers.dart';
 import 'login_page.dart';
+import 'email_verification_page.dart'; // [BARU]
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -136,6 +137,9 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
     }
   }
 
+  // ============================================================
+  // [BERUBAH] _handleRegister — sekarang handle email verification
+  // ============================================================
   Future<void> _handleRegister() async {
     if (!_validateCurrentStep()) return;
     if (_isProcessing) return;
@@ -144,7 +148,7 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
     showLoading(context);
 
     try {
-      await _authController.signUp(
+      final result = await _authController.signUp(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
         phone: _phoneController.text.trim(),
@@ -159,13 +163,43 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
 
       if (!mounted) return;
       hideLoading(context);
-      _showSuccessDialog();
+
+      // [BARU] Cek apakah perlu verifikasi email
+      if (result['needsEmailVerification'] == true) {
+        _goToEmailVerification(result['email'] as String);
+      } else {
+        _showSuccessDialog();
+      }
     } catch (e) {
       if (mounted) hideLoading(context);
       _showError(e.toString());
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  // ============================================================
+  // [BARU] Navigasi ke halaman verifikasi email
+  // ============================================================
+  void _goToEmailVerification(String email) {
+    Navigator.pushAndRemoveUntil(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => EmailVerificationPage(email: email),
+        transitionsBuilder: (_, anim, __, child) {
+          return FadeTransition(
+            opacity: anim,
+            child: SlideTransition(
+              position: Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero)
+                  .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+              child: child,
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+      (route) => false,
+    );
   }
 
   void _showSuccessDialog() {
@@ -272,15 +306,11 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
                                 IconButton(onPressed: _prevStep, icon: const Icon(Icons.arrow_back_rounded, color: Colors.white)),
                                 const SizedBox(width: 4),
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text('Daftar Akun', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
-                                      Text(_stepTitle(_currentStep), style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
-                                    ],
-                                  ),
+                                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                    const Text('Daftar Akun', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700)),
+                                    Text(_stepTitle(_currentStep), style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12)),
+                                  ]),
                                 ),
-                                // --- TOMBOL SWITCH MODE ---
                                 InkWell(
                                   onTap: () => LayoutState().toggleMode(),
                                   borderRadius: BorderRadius.circular(20),
@@ -288,13 +318,11 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
                                     margin: const EdgeInsets.only(right: 8),
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3))),
-                                    child: Row(
-                                      children: [
-                                        Icon(isDesktop ? Icons.phone_android_rounded : Icons.computer_rounded, color: Colors.white, size: 14),
-                                        const SizedBox(width: 4),
-                                        Text(isDesktop ? "HP" : "Web", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                                      ],
-                                    ),
+                                    child: Row(children: [
+                                      Icon(isDesktop ? Icons.phone_android_rounded : Icons.computer_rounded, color: Colors.white, size: 14),
+                                      const SizedBox(width: 4),
+                                      Text(isDesktop ? "HP" : "Web", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                                    ]),
                                   ),
                                 ),
                                 Container(
@@ -336,14 +364,11 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
                             child: ElevatedButton(
                               onPressed: _isProcessing ? null : (_currentStep == _totalSteps - 1 ? _handleRegister : _nextStep),
                               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB71C1C), foregroundColor: Colors.white, disabledBackgroundColor: const Color(0xFFB71C1C).withOpacity(0.5), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(_currentStep == _totalSteps - 1 ? 'Daftar Sekarang' : 'Lanjut', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                                  const SizedBox(width: 8),
-                                  Icon(_currentStep == _totalSteps - 1 ? Icons.check_circle_rounded : Icons.arrow_forward_rounded, size: 20),
-                                ],
-                              ),
+                              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                Text(_currentStep == _totalSteps - 1 ? 'Daftar Sekarang' : 'Lanjut', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                                const SizedBox(width: 8),
+                                Icon(_currentStep == _totalSteps - 1 ? Icons.check_circle_rounded : Icons.arrow_forward_rounded, size: 20),
+                              ]),
                             ),
                           ),
                         ),
@@ -378,86 +403,80 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
   Widget _buildStep1Akun() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-      child: Column(
-        children: [
-          _buildStepIcon(Icons.person_add_rounded), const SizedBox(height: 20),
-          _buildFormCard(children: [
-            _buildLabel('Nomor HP', isRequired: true), const SizedBox(height: 8),
-            _buildTextField(controller: _phoneController, hint: 'Contoh: 08123456789', icon: Icons.phone_android_rounded, keyboardType: TextInputType.phone), const SizedBox(height: 18),
-            _buildLabel('Email', isRequired: true), const SizedBox(height: 8),
-            _buildTextField(controller: _emailController, hint: 'Contoh: toko@email.com', icon: Icons.email_outlined, keyboardType: TextInputType.emailAddress), const SizedBox(height: 18),
-            _buildLabel('Password', isRequired: true), const SizedBox(height: 8),
-            _buildPasswordField(controller: _passwordController, hint: 'Minimal 6 karakter', showPassword: _showPass, onToggle: () => setState(() => _showPass = !_showPass)), const SizedBox(height: 18),
-            _buildLabel('Konfirmasi Password', isRequired: true), const SizedBox(height: 8),
-            _buildPasswordField(controller: _confirmPasswordController, hint: 'Ulangi password', showPassword: _showConfirm, onToggle: () => setState(() => _showConfirm = !_showConfirm)),
-          ]), const SizedBox(height: 14),
-          _buildInfoBox(text: 'Nomor HP dan Email akan digunakan untuk login. Pastikan keduanya aktif.', bgColor: const Color(0xFFFFF8E1), borderColor: const Color(0xFFFFE082), iconColor: const Color(0xFFF57F17)),
-        ],
-      ),
+      child: Column(children: [
+        _buildStepIcon(Icons.person_add_rounded), const SizedBox(height: 20),
+        _buildFormCard(children: [
+          _buildLabel('Nomor HP', isRequired: true), const SizedBox(height: 8),
+          _buildTextField(controller: _phoneController, hint: 'Contoh: 08123456789', icon: Icons.phone_android_rounded, keyboardType: TextInputType.phone), const SizedBox(height: 18),
+          _buildLabel('Email', isRequired: true), const SizedBox(height: 8),
+          _buildTextField(controller: _emailController, hint: 'Contoh: toko@email.com', icon: Icons.email_outlined, keyboardType: TextInputType.emailAddress), const SizedBox(height: 18),
+          _buildLabel('Password', isRequired: true), const SizedBox(height: 8),
+          _buildPasswordField(controller: _passwordController, hint: 'Minimal 6 karakter', showPassword: _showPass, onToggle: () => setState(() => _showPass = !_showPass)), const SizedBox(height: 18),
+          _buildLabel('Konfirmasi Password', isRequired: true), const SizedBox(height: 8),
+          _buildPasswordField(controller: _confirmPasswordController, hint: 'Ulangi password', showPassword: _showConfirm, onToggle: () => setState(() => _showConfirm = !_showConfirm)),
+        ]), const SizedBox(height: 14),
+        _buildInfoBox(text: 'Nomor HP dan Email akan digunakan untuk login. Pastikan keduanya aktif.', bgColor: const Color(0xFFFFF8E1), borderColor: const Color(0xFFFFE082), iconColor: const Color(0xFFF57F17)),
+      ]),
     );
   }
 
   Widget _buildStep2Toko() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-      child: Column(
-        children: [
-          _buildStepIcon(Icons.store_rounded), const SizedBox(height: 20),
-          _buildFormCard(children: [
-            _buildLabel('Nama Toko', isRequired: true), const SizedBox(height: 8),
-            _buildTextField(controller: _namaTokoController, hint: 'Contoh: Toko Jaya Motor', icon: Icons.storefront_rounded), const SizedBox(height: 18),
-            _buildLabel('Nama PIC (Penanggung Jawab)', isRequired: true), const SizedBox(height: 8),
-            _buildTextField(controller: _picNameController, hint: 'Contoh: Budi Santoso', icon: Icons.person_outline_rounded), const SizedBox(height: 18),
-            _buildLabel('Alamat Toko', isRequired: true), const SizedBox(height: 8),
-            _buildTextField(controller: _storeAddressController, hint: 'Jl. Raya No. 123, Surabaya', icon: Icons.location_on_outlined, maxLines: 2), const SizedBox(height: 18),
-            _buildLabel('Domisili', isRequired: true), const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              decoration: _inputDecoration(hint: 'Pilih Kota', prefixIcon: Icons.map_outlined),
-              icon: const Icon(Icons.arrow_drop_down_rounded, color: Colors.grey),
-              value: _selectedDomisili,
-              items: _listDomisili.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-              onChanged: (v) => setState(() => _selectedDomisili = v),
-            ),
-          ]),
-        ],
-      ),
+      child: Column(children: [
+        _buildStepIcon(Icons.store_rounded), const SizedBox(height: 20),
+        _buildFormCard(children: [
+          _buildLabel('Nama Toko', isRequired: true), const SizedBox(height: 8),
+          _buildTextField(controller: _namaTokoController, hint: 'Contoh: Toko Jaya Motor', icon: Icons.storefront_rounded), const SizedBox(height: 18),
+          _buildLabel('Nama PIC (Penanggung Jawab)', isRequired: true), const SizedBox(height: 8),
+          _buildTextField(controller: _picNameController, hint: 'Contoh: Budi Santoso', icon: Icons.person_outline_rounded), const SizedBox(height: 18),
+          _buildLabel('Alamat Toko', isRequired: true), const SizedBox(height: 8),
+          _buildTextField(controller: _storeAddressController, hint: 'Jl. Raya No. 123, Surabaya', icon: Icons.location_on_outlined, maxLines: 2), const SizedBox(height: 18),
+          _buildLabel('Domisili', isRequired: true), const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            decoration: _inputDecoration(hint: 'Pilih Kota', prefixIcon: Icons.map_outlined),
+            icon: const Icon(Icons.arrow_drop_down_rounded, color: Colors.grey),
+            value: _selectedDomisili,
+            items: _listDomisili.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+            onChanged: (v) => setState(() => _selectedDomisili = v),
+          ),
+        ]),
+      ]),
     );
   }
 
   Widget _buildStep3Ktp() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-      child: Column(
-        children: [
-          _buildStepIcon(Icons.badge_rounded), const SizedBox(height: 20),
-          _buildFormCard(children: [
-            _buildLabel('Nomor KTP', isRequired: true), const SizedBox(height: 8),
-            _buildTextField(controller: _ktpNumberController, hint: '16 digit nomor KTP', icon: Icons.credit_card_rounded, keyboardType: TextInputType.number, maxLength: 16), const SizedBox(height: 18),
-            _buildLabel('Foto KTP', isRequired: true), const SizedBox(height: 10),
-            GestureDetector(
-              onTap: () => _showImageSourceDialog(),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300), width: double.infinity, height: 180,
-                decoration: BoxDecoration(color: _ktpBytes != null ? Colors.transparent : const Color(0xFFF8F9FC), borderRadius: BorderRadius.circular(16), border: Border.all(color: _ktpBytes != null ? const Color(0xFF10B981) : Colors.grey[300]!, width: _ktpBytes != null ? 2 : 1)),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(_ktpBytes != null ? 14 : 15),
-                  child: _ktpBytes != null
-                      ? Stack(fit: StackFit.expand, children: [
-                          Image.memory(_ktpBytes!, fit: BoxFit.cover),
-                          Positioned(top: 10, right: 10, child: Container(width: 32, height: 32, decoration: const BoxDecoration(color: Color(0xFF10B981), shape: BoxShape.circle), child: const Icon(Icons.check_rounded, color: Colors.white, size: 20))),
-                          Positioned(bottom: 10, right: 10, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(10)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.edit_rounded, color: Colors.white, size: 14), SizedBox(width: 4), Text('Ganti', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600))]))),
-                        ])
-                      : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Container(width: 56, height: 56, decoration: BoxDecoration(color: const Color(0xFFB71C1C).withOpacity(0.08), borderRadius: BorderRadius.circular(16)), child: const Icon(Icons.add_a_photo_rounded, size: 28, color: Color(0xFFB71C1C))),
-                          const SizedBox(height: 12), const Text('Tap untuk unggah foto KTP', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
-                          const SizedBox(height: 4), Text('Dari galeri atau kamera', style: TextStyle(fontSize: 12, color: Colors.grey[400])),
-                        ]),
-                ),
+      child: Column(children: [
+        _buildStepIcon(Icons.badge_rounded), const SizedBox(height: 20),
+        _buildFormCard(children: [
+          _buildLabel('Nomor KTP', isRequired: true), const SizedBox(height: 8),
+          _buildTextField(controller: _ktpNumberController, hint: '16 digit nomor KTP', icon: Icons.credit_card_rounded, keyboardType: TextInputType.number, maxLength: 16), const SizedBox(height: 18),
+          _buildLabel('Foto KTP', isRequired: true), const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () => _showImageSourceDialog(),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300), width: double.infinity, height: 180,
+              decoration: BoxDecoration(color: _ktpBytes != null ? Colors.transparent : const Color(0xFFF8F9FC), borderRadius: BorderRadius.circular(16), border: Border.all(color: _ktpBytes != null ? const Color(0xFF10B981) : Colors.grey[300]!, width: _ktpBytes != null ? 2 : 1)),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(_ktpBytes != null ? 14 : 15),
+                child: _ktpBytes != null
+                    ? Stack(fit: StackFit.expand, children: [
+                        Image.memory(_ktpBytes!, fit: BoxFit.cover),
+                        Positioned(top: 10, right: 10, child: Container(width: 32, height: 32, decoration: const BoxDecoration(color: Color(0xFF10B981), shape: BoxShape.circle), child: const Icon(Icons.check_rounded, color: Colors.white, size: 20))),
+                        Positioned(bottom: 10, right: 10, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(10)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.edit_rounded, color: Colors.white, size: 14), SizedBox(width: 4), Text('Ganti', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600))]))),
+                      ])
+                    : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Container(width: 56, height: 56, decoration: BoxDecoration(color: const Color(0xFFB71C1C).withOpacity(0.08), borderRadius: BorderRadius.circular(16)), child: const Icon(Icons.add_a_photo_rounded, size: 28, color: Color(0xFFB71C1C))),
+                        const SizedBox(height: 12), const Text('Tap untuk unggah foto KTP', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
+                        const SizedBox(height: 4), Text('Dari galeri atau kamera', style: TextStyle(fontSize: 12, color: Colors.grey[400])),
+                      ]),
               ),
             ),
-          ]), const SizedBox(height: 14), _buildTipsCard(),
-        ],
-      ),
+          ),
+        ]), const SizedBox(height: 14), _buildTipsCard(),
+      ]),
     );
   }
 
@@ -477,15 +496,12 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
       context: context, backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
         padding: const EdgeInsets.all(24), decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))), const SizedBox(height: 20),
-            const Text('Pilih Sumber Foto', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)), const SizedBox(height: 20),
-            Row(children: [Expanded(child: _sourceButton(Icons.photo_library_rounded, 'Galeri', () { Navigator.pop(ctx); _pickKtpImage(); })), const SizedBox(width: 12), Expanded(child: _sourceButton(Icons.camera_alt_rounded, 'Kamera', () { Navigator.pop(ctx); _takeKtpPhoto(); }))]),
-            SizedBox(height: MediaQuery.of(ctx).padding.bottom + 8),
-          ],
-        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))), const SizedBox(height: 20),
+          const Text('Pilih Sumber Foto', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)), const SizedBox(height: 20),
+          Row(children: [Expanded(child: _sourceButton(Icons.photo_library_rounded, 'Galeri', () { Navigator.pop(ctx); _pickKtpImage(); })), const SizedBox(width: 12), Expanded(child: _sourceButton(Icons.camera_alt_rounded, 'Kamera', () { Navigator.pop(ctx); _takeKtpPhoto(); }))]),
+          SizedBox(height: MediaQuery.of(ctx).padding.bottom + 8),
+        ]),
       ),
     );
   }

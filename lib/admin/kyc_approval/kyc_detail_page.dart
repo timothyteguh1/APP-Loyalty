@@ -130,12 +130,9 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
         'updated_at': DateTime.now().toIso8601String(),
       };
 
-      // --- [PERBAIKAN LOGIKA: MENYIMPAN ALASAN PENOLAKAN] ---
-      // Kita pastikan alasan penolakan ikut tersimpan ke database
       if (status == 'REJECTED' && reason != null && reason.isNotEmpty) {
         updateData['rejection_reason'] = reason;
       } else if (status == 'APPROVED') {
-        // Jika sebelumnya sempat ditolak tapi sekarang disetujui, bersihkan alasan lamanya
         updateData['rejection_reason'] = null; 
       }
 
@@ -166,6 +163,357 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  // ============================================================
+  // [BARU - POIN 2] HAPUS USER PERMANEN
+  // ============================================================
+  Future<void> _deleteUser() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text('Hapus User', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '"${widget.store['full_name'] ?? '-'}" akan dihapus PERMANEN.',
+              style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_rounded, color: Color(0xFFEF4444), size: 16),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Semua data poin, riwayat, dan voucher user ini akan hilang selamanya.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFFB91C1C), height: 1.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
+            ),
+            child: const Text('Ya, Hapus Permanen', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      final result = await _admin.rpc('admin_delete_user', params: {
+        'target_user_id': widget.store['id'],
+      });
+
+      if (!mounted) return;
+
+      if (result != null && result['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result['message'] ?? 'User berhasil dihapus'),
+          backgroundColor: const Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(20),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+        Navigator.pop(context, true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result?['message'] ?? 'Gagal menghapus user'),
+          backgroundColor: const Color(0xFFEF4444),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal: $e'), backgroundColor: const Color(0xFFEF4444)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  // ============================================================
+  // [BARU - POIN 2] RESET PASSWORD USER
+  // ============================================================
+  Future<void> _resetUserPassword() async {
+    final userId = widget.store['id'];
+    String? userEmail;
+
+    // Ambil email user dari auth
+    try {
+      final userData = await _admin.auth.admin.getUserById(userId);
+      userEmail = userData.user?.email;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal ambil data user: $e'), backgroundColor: const Color(0xFFEF4444)),
+        );
+      }
+      return;
+    }
+
+    if (userEmail == null || userEmail.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Email user tidak ditemukan'), backgroundColor: Color(0xFFEF4444)),
+        );
+      }
+      return;
+    }
+
+    // Dialog pilih metode reset
+    final method = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: const Color(0xFF3B82F6).withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.lock_reset_rounded, color: Color(0xFF3B82F6), size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text('Reset Password', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('User: ${widget.store['full_name'] ?? '-'}', style: const TextStyle(fontWeight: FontWeight.w600)),
+            Text('Email: $userEmail', style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+            const SizedBox(height: 20),
+            const Text('Pilih metode:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+
+            // Opsi 1: Kirim email reset
+            _buildResetOption(
+              icon: Icons.email_rounded,
+              color: const Color(0xFF3B82F6),
+              title: 'Kirim Email Reset',
+              subtitle: 'User akan terima email untuk buat password baru',
+              onTap: () => Navigator.pop(ctx, 'EMAIL'),
+            ),
+            const SizedBox(height: 10),
+
+            // Opsi 2: Set password langsung
+            _buildResetOption(
+              icon: Icons.password_rounded,
+              color: const Color(0xFFF59E0B),
+              title: 'Set Password Baru',
+              subtitle: 'Admin langsung tentukan password baru',
+              onTap: () => Navigator.pop(ctx, 'DIRECT'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
+          ),
+        ],
+      ),
+    );
+
+    if (method == null) return;
+
+    if (method == 'EMAIL') {
+      await _sendResetEmail(userEmail);
+    } else if (method == 'DIRECT') {
+      await _setPasswordDirect(userId, userEmail);
+    }
+  }
+
+  Future<void> _sendResetEmail(String email) async {
+    setState(() => _isProcessing = true);
+    try {
+     await Supabase.instance.client.auth.resetPasswordForEmail(email);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Email reset password dikirim ke $email'),
+        backgroundColor: const Color(0xFF10B981),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal kirim email: $e'), backgroundColor: const Color(0xFFEF4444)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _setPasswordDirect(String userId, String email) async {
+    final passCtrl = TextEditingController();
+    bool showPass = false;
+
+    final newPass = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Set Password Baru', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Untuk: $email', style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passCtrl,
+                obscureText: !showPass,
+                decoration: InputDecoration(
+                  hintText: 'Password baru (min 6 karakter)',
+                  hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
+                  prefixIcon: Icon(Icons.lock_outline_rounded, size: 20, color: Colors.grey[400]),
+                  suffixIcon: IconButton(
+                    icon: Icon(showPass ? Icons.visibility_rounded : Icons.visibility_off_rounded, size: 20, color: Colors.grey[400]),
+                    onPressed: () => setD(() => showPass = !showPass),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF9FAFB),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFF59E0B), width: 1.5)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Batal', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (passCtrl.text.trim().length < 6) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('Minimal 6 karakter'), backgroundColor: Color(0xFFEF4444)),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, passCtrl.text.trim());
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF59E0B),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              child: const Text('Simpan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (newPass == null) return;
+
+    setState(() => _isProcessing = true);
+    try {
+      await _admin.auth.admin.updateUserById(
+  userId,
+  attributes: AdminUserAttributes(password: newPass),
+);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Password berhasil diubah!'),
+        backgroundColor: const Color(0xFF10B981),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal: $e'), backgroundColor: const Color(0xFFEF4444)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Widget _buildResetOption({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
+                  Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: color, size: 20),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<bool?> _showConfirmDialog({
@@ -455,6 +803,84 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
                                   ],
                                 ),
                               ),
+
+                            const SizedBox(height: 20),
+
+                            // ======= [BARU - POIN 2] ADMIN TOOLS =======
+                            _buildSection('Admin Tools', [
+                              // Reset Password
+                              GestureDetector(
+                                onTap: _isProcessing ? null : _resetUserPassword,
+                                child: Container(
+                                  padding: const EdgeInsets.all(14),
+                                  margin: const EdgeInsets.only(bottom: 10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF0F9FF),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFFBAE6FD)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 40, height: 40,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF3B82F6).withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: const Icon(Icons.lock_reset_rounded, color: Color(0xFF3B82F6), size: 20),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      const Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('Reset Password', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1E40AF))),
+                                            Text('Kirim email reset atau set password baru', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
+                                          ],
+                                        ),
+                                      ),
+                                      const Icon(Icons.chevron_right_rounded, color: Color(0xFF3B82F6), size: 20),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                              // Hapus User
+                              GestureDetector(
+                                onTap: _isProcessing ? null : _deleteUser,
+                                child: Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF2F2),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 40, height: 40,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFEF4444).withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 20),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      const Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('Hapus User Permanen', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFFB91C1C))),
+                                            Text('Hapus semua data user ini selamanya', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
+                                          ],
+                                        ),
+                                      ),
+                                      const Icon(Icons.chevron_right_rounded, color: Color(0xFFEF4444), size: 20),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ]),
                           ],
                         ),
                       ),
