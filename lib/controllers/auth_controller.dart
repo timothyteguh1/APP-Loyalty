@@ -21,10 +21,16 @@ class AuthController {
     required String storeAddress,
     required String domisili,
     required String ktpNumber,
+    String? accurateCustomerId, // [NEW] Parameter Kode Pelanggan
     Uint8List? ktpImageBytes,
     String? ktpFileName,
   }) async {
     try {
+      // [PENTING] Mencegah string kosong masuk dan menabrak Unique Constraint di Database
+      final validAccurateId = (accurateCustomerId != null && accurateCustomerId.trim().isNotEmpty) 
+          ? accurateCustomerId.trim() 
+          : null;
+
       final AuthResponse res = await _supabase.auth.signUp(
         email: email,
         password: password,
@@ -35,6 +41,7 @@ class AuthController {
           'store_address': storeAddress,
           'domisili': domisili,
           'ktp_number': ktpNumber,
+          'accurate_customer_id': validAccurateId, // [NEW] Simpan ke metadata
         },
       );
 
@@ -60,15 +67,19 @@ class AuthController {
         }
       }
 
-      if (ktpImageUrl != null) {
-        try {
-          await _supabase.from('profiles').update({
-            'ktp_image_url': ktpImageUrl,
-            'updated_at': DateTime.now().toIso8601String(),
-          }).eq('id', userId);
-        } catch (e) {
-          debugPrint('KTP URL update note: $e');
+      // Pastikan data profil terupdate dengan KTP URL (jika ada) dan accurate_customer_id
+      try {
+        final updateData = <String, dynamic>{
+          'updated_at': DateTime.now().toIso8601String(),
+        };
+        if (ktpImageUrl != null) updateData['ktp_image_url'] = ktpImageUrl;
+        if (validAccurateId != null) updateData['accurate_customer_id'] = validAccurateId; // [NEW] Fallback Update
+
+        if (updateData.length > 1) { // Hanya update jika ada KTP atau Accurate ID
+          await _supabase.from('profiles').update(updateData).eq('id', userId);
         }
+      } catch (e) {
+        debugPrint('Profile update note: $e');
       }
 
       // ======= EMAIL NOTIFIKASI: Notify Admin tentang pendaftaran baru =======

@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase/supabase.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // Import Supabase
 
 class AccurateService {
+  // INISIALISASI SUPABASE DI SINI
+  final _supabase = Supabase.instance.client;
+
   static const String _clientId = '79aaa170-8897-4cf7-b0d1-b8ec78dd07d1';
   static const String _redirectUri = 'http://localhost:3000/oauth_callback.html';
   static const String _oauthBaseUrl = 'https://account.accurate.id';
@@ -12,7 +15,6 @@ class AccurateService {
 
   // ============================================================
   // PROXY - Semua request ke Accurate lewat Edge Function
-  // Ini menghindari CORS error di Flutter Web
   // ============================================================
   static Future<Map<String, dynamic>> _proxy({
     required String accurateUrl,
@@ -129,7 +131,6 @@ class AccurateService {
   // BUKA DATABASE (via proxy)
   // ============================================================
   static Future<Map<String, String>> openDatabase(String accessToken, String dbId) async {
-    // Ambil daftar DB dulu untuk dapat integer ID yang benar
     final dbList = await fetchDatabaseList(accessToken);
 
     Map<String, dynamic>? targetDb;
@@ -153,8 +154,6 @@ class AccurateService {
 
     if (data['s'] != true) throw data['d']?.toString() ?? 'Gagal buka database';
 
-    // FIX: host dan session ada di TOP LEVEL response, bukan di dalam data['d']
-    // Response format: { "d": ["Proses Berhasil Dilakukan"], "host": "https://...", "session": "xxx", "s": true }
     final host = data['host']?.toString() ?? 'https://public.accurate.id';
     final session = data['session']?.toString() ?? '';
     if (session.isEmpty) throw 'Session tidak ditemukan';
@@ -217,7 +216,6 @@ class AccurateService {
 
   // ============================================================
   // BUAT FAKTUR DI ACCURATE dari transaksi Upsol (via proxy)
-  // Dipanggil saat QR scan berhasil
   // ============================================================
   static Future<String?> createSalesInvoice({
     required String host,
@@ -226,19 +224,16 @@ class AccurateService {
     required String customerName,
     required double amount,
     required String description,
-    required String upsolRefId, // reference_id dari point_history
+    required String upsolRefId, 
   }) async {
     try {
-      // Format tanggal untuk Accurate: dd/MM/yyyy
       final now = DateTime.now();
       final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
 
-      // Buat body faktur
       final invoiceBody = {
         'transactionDate': dateStr,
         'customer.id': '$accurateCustomerId',
         'description': description,
-        // Detail item faktur
         'detailItem[0].itemNo': 'UPSOL-TXN',
         'detailItem[0].name': description,
         'detailItem[0].quantity': '1',
@@ -254,18 +249,60 @@ class AccurateService {
       );
 
       if (data['s'] == true) {
-        return data['d']?['number']?.toString(); // Return nomor faktur
+        return data['d']?['number']?.toString(); 
       }
       return null;
     } catch (e) {
-      // Jangan throw — gagal buat faktur tidak boleh blokir poin
       return null;
+    }
+  }
+
+// ============================================================
+  // AMBIL DAFTAR PELANGGAN ACCURATE (TIDAK TERDAFTAR)
+  // ============================================================
+  Future<List<Map<String, dynamic>>> getAccurateCustomers() async {
+    try {
+      final config = await _supabase
+          .from('app_config')
+          .select()
+          .inFilter('key', ['accurate_db_host', 'accurate_access_token', 'accurate_db_session']);
+      
+      String? host, token, session;
+      for (var row in config) {
+        if (row['key'] == 'accurate_db_host') host = row['value'];
+        if (row['key'] == 'accurate_access_token') token = row['value'];
+        if (row['key'] == 'accurate_db_session') session = row['value'];
+      }
+
+      // Pastikan token juga dicek
+      if (host == null || token == null || session == null || host.isEmpty || session.isEmpty || token.isEmpty) {
+        throw Exception('Kredensial Accurate tidak ditemukan. Pastikan Anda sudah login dan memilih Database di Koneksi Accurate.');
+      }
+
+      // PERBAIKAN: Masukkan kembali 'Authorization: Bearer' karena Accurate butuh 2 header ini.
+      final data = await _proxy(
+        accurateUrl: '$host/accurate/api/customer/list.do?fields=id,customerNo,name,mobilePhone',
+        headers: {
+          'Authorization': 'Bearer $token', // <- Ini yang tadi terlewat
+          'X-Session-ID': session,
+        },
+        method: 'GET',
+      );
+
+      if (data['s'] == true && data['d'] != null) {
+        return List<Map<String, dynamic>>.from(data['d']);
+      } else {
+        // PERBAIKAN ERROR LOG: Print semua balasan json agar ketahuan error aslinya jika gagal
+        throw Exception('Respon dari Accurate: ${jsonEncode(data)}');
+      }
+    } catch (e) {
+      print('Error getAccurateCustomers: $e');
+      rethrow;
     }
   }
 
   // ============================================================
   // SYNC FAKTUR ACCURATE → POIN LOKAL
-  // Anti-double via reference_id = nomor faktur
   // ============================================================
   static Future<SyncResult> syncInvoicesToPoints({
     required SupabaseClient admin,
@@ -343,7 +380,6 @@ class AccurateService {
                 continue;
               }
 
-              // Anti-double check
               final existing = await admin
                   .from('point_history')
                   .select('id')
@@ -363,7 +399,6 @@ class AccurateService {
                 continue;
               }
 
-              // Insert ke point_history
               await admin.from('point_history').insert({
                 'user_id': userId,
                 'amount': pointsEarned,
@@ -380,7 +415,7 @@ class AccurateService {
 
             hasMore = (page * 50) < totalCount;
             page++;
-            if (page > 10) hasMore = false; // Safety limit
+            if (page > 10) hasMore = false; 
           }
 
           if (userPointsGained > 0) {
@@ -410,7 +445,6 @@ class AccurateService {
     }
   }
 
-  // Helper: parse tanggal dari format Accurate "dd/MM/yyyy" ke ISO
   static String _parseAccurateDate(String dateStr) {
     try {
       final parts = dateStr.split('/');
@@ -425,9 +459,6 @@ class AccurateService {
     return DateTime.now().toIso8601String();
   }
 
-  // ============================================================
-  // DISCONNECT
-  // ============================================================
   static Future<void> disconnect(SupabaseClient admin) async {
     final keys = [
       'accurate_access_token', 'accurate_token_expiry',
@@ -439,9 +470,6 @@ class AccurateService {
   }
 }
 
-// ============================================================
-// SYNC RESULT MODEL
-// ============================================================
 class SyncResult {
   final String message;
   final int totalInvoicesChecked;

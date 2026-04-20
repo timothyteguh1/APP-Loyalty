@@ -5,7 +5,8 @@ import '../manage_banners/banners_manage_page.dart';
 import 'manual_points_page.dart';
 import '../accurate/accurate_connect_page.dart';
 import 'admin_manage_page.dart';
-import 'admin_register_user_page.dart'; // [NEW]
+import 'admin_register_user_page.dart'; 
+import 'unregistered_customers_page.dart'; // [NEW] Import halaman pelanggan yang belum terdaftar
 
 class ManageMenuPage extends StatelessWidget {
   const ManageMenuPage({super.key});
@@ -44,8 +45,9 @@ class ManageMenuPage extends StatelessWidget {
             spacing: 16,
             runSpacing: 0,
             children: [
-              // [NEW] Register User
               _menuWrapper(isDesktop, _MenuItem(icon: Icons.person_add_alt_1_rounded, color: const Color(0xFF7C3AED), title: 'Daftarkan User', subtitle: 'Register toko kecil oleh admin', delay: 360, isNew: true, onTap: () => Navigator.push(context, _slideRoute(const AdminRegisterUserPage())))),
+              // [NEW] Tambahan Menu Unregistered Customers
+              _menuWrapper(isDesktop, _MenuItem(icon: Icons.person_search_rounded, color: const Color(0xFF10B981), title: 'Pelanggan Accurate', subtitle: 'Cek toko yang belum terdaftar', delay: 380, isNew: true, onTap: () => Navigator.push(context, _slideRoute(const UnregisteredCustomersPage())))),
             ],
           ),
 

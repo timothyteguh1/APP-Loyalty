@@ -56,9 +56,13 @@ class _AdminLoginPageState extends State<AdminLoginPage> with TickerProviderStat
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
+Future<void> _handleLogin() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    if (_emailController.text.trim().isEmpty || _passwordController.text.trim().isEmpty) { 
+    
+    final emailInput = _emailController.text.trim();
+    final passwordInput = _passwordController.text.trim();
+
+    if (emailInput.isEmpty || passwordInput.isEmpty) { 
       setState(() => _error = 'Email dan password wajib diisi'); 
       return; 
     }
@@ -66,38 +70,46 @@ class _AdminLoginPageState extends State<AdminLoginPage> with TickerProviderStat
     setState(() { _isLoading = true; _error = null; });
     
     try {
-      await _supabase.auth.signInWithPassword(email: _emailController.text.trim(), password: _passwordController.text.trim());
-      final adminEmailsData = await AdminSupabase.client.from('app_config').select('value').eq('key', 'admin_emails').maybeSingle();
+      // 1. CEK ADMIN DULUAN: Pastikan email terdaftar di database
+      // Menggunakan AdminSupabase (Service Role) agar bisa baca db sebelum login
+      final adminEmailsData = await AdminSupabase.client
+          .from('app_config')
+          .select('value')
+          .eq('key', 'admin_emails')
+          .maybeSingle();
       
       if (adminEmailsData == null) { 
-        await _supabase.auth.signOut(); 
-        if (!mounted) return; // FIX: Cek mounted sebelum setState
-        setState(() => _error = 'Konfigurasi admin belum diatur'); 
+        if (!mounted) return;
+        setState(() => _error = 'Gagal: Konfigurasi "admin_emails" belum diatur di tabel app_config.'); 
         return; 
       }
       
       final String adminEmails = adminEmailsData['value'];
-      final String currentEmail = _emailController.text.trim().toLowerCase();
       
-      if (!adminEmails.toLowerCase().contains(currentEmail)) { 
-        await _supabase.auth.signOut(); 
-        if (!mounted) return; // FIX: Cek mounted sebelum setState
-        setState(() => _error = 'Akses ditolak. Hanya admin yang bisa login.'); 
+      if (!adminEmails.toLowerCase().contains(emailInput.toLowerCase())) { 
+        if (!mounted) return;
+        setState(() => _error = 'Akses ditolak: Email Anda tidak terdaftar sebagai Admin.'); 
         return; 
       }
       
-      if (!mounted) return;
-      Navigator.pushAndRemoveUntil(context, PageRouteBuilder(pageBuilder: (context, animation, secondaryAnimation) => const AdminHomePage(), transitionsBuilder: (context, animation, secondaryAnimation, child) { return FadeTransition(opacity: animation, child: SlideTransition(position: Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)), child: child)); }, transitionDuration: const Duration(milliseconds: 500)), (route) => false);
+      // 2. JIKA LOLOS: Baru lakukan proses Login auth Supabase
+      await _supabase.auth.signInWithPassword(email: emailInput, password: passwordInput);
+      
+      // 3. SELESAI: Tidak perlu Navigator.push manual di sini.
+      // StreamBuilder (AdminAuthGate) di main_admin.dart akan mendeteksi 
+      // sesi login yang baru dan otomatis membuka halaman AdminMainPage.
+      
     } on AuthException catch (e) {
-      if (!mounted) return; // FIX: Cek mounted di dalam catch
+      if (!mounted) return;
       String msg = 'Login gagal';
-      if (e.message.contains('Invalid login') || e.message.contains('invalid_credentials')) msg = 'Email atau password salah';
+      if (e.message.contains('Invalid login') || e.message.contains('invalid_credentials')) {
+        msg = 'Email atau password salah';
+      }
       setState(() => _error = msg);
     } catch (e) { 
-      if (!mounted) return; // FIX: Cek mounted di dalam catch
-      setState(() => _error = 'Terjadi kesalahan koneksi'); 
+      if (!mounted) return;
+      setState(() => _error = 'Terjadi kesalahan koneksi database'); 
     } finally { 
-      // Ini sudah aman karena kamu sudah menaruh if (mounted)
       if (mounted) setState(() => _isLoading = false); 
     }
   }

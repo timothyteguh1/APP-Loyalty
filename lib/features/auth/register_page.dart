@@ -8,7 +8,7 @@ import '../../controllers/auth_controller.dart';
 import '../../utils/layout_state.dart';
 import '../../utils/ui_helpers.dart';
 import 'login_page.dart';
-import 'email_verification_page.dart'; // [BARU]
+import 'email_verification_page.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -35,6 +35,7 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
   final _namaTokoController = TextEditingController();
   final _picNameController = TextEditingController();
   final _storeAddressController = TextEditingController();
+  final _accurateIdController = TextEditingController(); // [NEW] Controller Kode Pelanggan
   String? _selectedDomisili;
   final List<String> _listDomisili = ['Surabaya', 'Sidoarjo', 'Gresik', 'Malang', 'Jakarta', 'Bandung', 'Semarang', 'Lainnya'];
 
@@ -66,6 +67,7 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
     _namaTokoController.dispose();
     _picNameController.dispose();
     _storeAddressController.dispose();
+    _accurateIdController.dispose(); // [NEW] Dispose controller
     _ktpNumberController.dispose();
     super.dispose();
   }
@@ -138,7 +140,7 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
   }
 
   // ============================================================
-  // [BERUBAH] _handleRegister — sekarang handle email verification
+  // _handleRegister — sekarang handle email verification
   // ============================================================
   Future<void> _handleRegister() async {
     if (!_validateCurrentStep()) return;
@@ -157,6 +159,7 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
         storeAddress: _storeAddressController.text.trim(),
         domisili: _selectedDomisili!,
         ktpNumber: _ktpNumberController.text.trim(),
+        accurateCustomerId: _accurateIdController.text.trim(), // [NEW] Kirim Kode Pelanggan
         ktpImageBytes: _ktpBytes,
         ktpFileName: _ktpFile?.name,
       );
@@ -164,7 +167,6 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
       if (!mounted) return;
       hideLoading(context);
 
-      // [BARU] Cek apakah perlu verifikasi email
       if (result['needsEmailVerification'] == true) {
         _goToEmailVerification(result['email'] as String);
       } else {
@@ -178,9 +180,6 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
     }
   }
 
-  // ============================================================
-  // [BARU] Navigasi ke halaman verifikasi email
-  // ============================================================
   void _goToEmailVerification(String email) {
     Navigator.pushAndRemoveUntil(
       context,
@@ -426,6 +425,10 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
       child: Column(children: [
         _buildStepIcon(Icons.store_rounded), const SizedBox(height: 20),
         _buildFormCard(children: [
+          // [NEW] Input untuk Kode Pelanggan
+          _buildLabel('Kode Pelanggan Accurate (Opsional)'), const SizedBox(height: 8),
+          _buildTextField(controller: _accurateIdController, hint: 'Contoh: CUST-0001 (Dari Admin)', icon: Icons.tag_rounded), const SizedBox(height: 18),
+          
           _buildLabel('Nama Toko', isRequired: true), const SizedBox(height: 8),
           _buildTextField(controller: _namaTokoController, hint: 'Contoh: Toko Jaya Motor', icon: Icons.storefront_rounded), const SizedBox(height: 18),
           _buildLabel('Nama PIC (Penanggung Jawab)', isRequired: true), const SizedBox(height: 8),
