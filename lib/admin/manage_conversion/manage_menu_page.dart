@@ -6,7 +6,8 @@ import 'manual_points_page.dart';
 import '../accurate/accurate_connect_page.dart';
 import 'admin_manage_page.dart';
 import 'admin_register_user_page.dart'; 
-import 'unregistered_customers_page.dart'; // [NEW] Import halaman pelanggan yang belum terdaftar
+import 'unregistered_customers_page.dart';
+import 'accurate_sync_history_page.dart'; // [NEW] Import halaman history sync
 
 class ManageMenuPage extends StatelessWidget {
   const ManageMenuPage({super.key});
@@ -46,7 +47,6 @@ class ManageMenuPage extends StatelessWidget {
             runSpacing: 0,
             children: [
               _menuWrapper(isDesktop, _MenuItem(icon: Icons.person_add_alt_1_rounded, color: const Color(0xFF7C3AED), title: 'Daftarkan User', subtitle: 'Register toko kecil oleh admin', delay: 360, isNew: true, onTap: () => Navigator.push(context, _slideRoute(const AdminRegisterUserPage())))),
-              // [NEW] Tambahan Menu Unregistered Customers
               _menuWrapper(isDesktop, _MenuItem(icon: Icons.person_search_rounded, color: const Color(0xFF10B981), title: 'Pelanggan Accurate', subtitle: 'Cek toko yang belum terdaftar', delay: 380, isNew: true, onTap: () => Navigator.push(context, _slideRoute(const UnregisteredCustomersPage())))),
             ],
           ),
@@ -59,7 +59,9 @@ class ManageMenuPage extends StatelessWidget {
             spacing: 16,
             runSpacing: 0,
             children: [
-              _menuWrapper(isDesktop, _MenuItem(icon: Icons.receipt_long_rounded, color: const Color(0xFF059669), title: 'Koneksi Accurate', subtitle: 'Sync faktur penjualan → poin toko', delay: 400, isNew: true, onTap: () => Navigator.push(context, _slideRoute(const _AccurateWrapper())))),
+              _menuWrapper(isDesktop, _MenuItem(icon: Icons.receipt_long_rounded, color: const Color(0xFF059669), title: 'Koneksi Accurate', subtitle: 'Hubungkan database Accurate', delay: 400, onTap: () => Navigator.push(context, _slideRoute(const _AccurateWrapper())))),
+              // [NEW] Tombol Sync & Histori
+              _menuWrapper(isDesktop, _MenuItem(icon: Icons.manage_history_rounded, color: const Color(0xFF3B82F6), title: 'Sync & Histori Poin', subtitle: 'Tarik poin faktur & retur otomatis', delay: 440, isNew: true, onTap: () => Navigator.push(context, _slideRoute(const _SyncHistoryWrapper())))),
             ],
           ),
         ],
@@ -100,6 +102,9 @@ class ManageMenuPage extends StatelessWidget {
   }
 }
 
+// ============================================================
+// WRAPPERS (Agar ada AppBar putih dengan panah kembali)
+// ============================================================
 class _AccurateWrapper extends StatelessWidget {
   const _AccurateWrapper();
   @override
@@ -110,6 +115,13 @@ class _ConversionWrapper extends StatelessWidget {
   const _ConversionWrapper();
   @override
   Widget build(BuildContext context) { return Scaffold(backgroundColor: const Color(0xFFF8F8FB), appBar: AppBar(backgroundColor: Colors.white, elevation: 0, leading: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF1A1A2E))), title: const Text('Konversi Poin', style: TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w700, fontSize: 18))), body: const ConversionPage()); }
+}
+
+// [NEW] Wrapper untuk halaman Sync History
+class _SyncHistoryWrapper extends StatelessWidget {
+  const _SyncHistoryWrapper();
+  @override
+  Widget build(BuildContext context) { return Scaffold(backgroundColor: const Color(0xFFF8F8FB), appBar: AppBar(backgroundColor: Colors.white, elevation: 0, leading: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF1A1A2E))), title: const Text('Sync & Histori Poin', style: TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w700, fontSize: 18))), body: const AccurateSyncHistoryPage()); }
 }
 
 class _MenuItem extends StatelessWidget {

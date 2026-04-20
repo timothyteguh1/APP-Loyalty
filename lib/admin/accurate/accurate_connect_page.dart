@@ -291,4 +291,5 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
       Expanded(child: Text(text, style: const TextStyle(fontSize: 13, color: Color(0xFF374151)))),
     ]));
   }
+  
 }
