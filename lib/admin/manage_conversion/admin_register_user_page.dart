@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase/supabase.dart';
 import '../admin_supabase.dart';
+import '../../utils/email_notification_service.dart';
 
 class AdminRegisterUserPage extends StatefulWidget {
   const AdminRegisterUserPage({super.key});
@@ -50,6 +51,15 @@ class _AdminRegisterUserPageState extends State<AdminRegisterUserPage> {
       final res = await _admin.auth.admin.createUser(AdminUserAttributes(email: _emailCtrl.text.trim(), password: _passwordCtrl.text.trim(), emailConfirm: true, userMetadata: {'full_name': _namaTokoCtrl.text.trim()}));
       if (res.user == null) throw 'Gagal membuat akun user';
       await _admin.from('profiles').upsert({'id': res.user!.id, 'full_name': _namaTokoCtrl.text.trim(), 'pic_name': _picNameCtrl.text.trim(), 'phone': _phoneCtrl.text.trim(), 'store_address': _addressCtrl.text.trim(), 'domisili': _selectedDomisili, 'approval_status': _autoApprove ? 'APPROVED' : 'PENDING', 'points': 0, 'updated_at': DateTime.now().toIso8601String()}, onConflict: 'id');
+
+      // ======= EMAIL NOTIFIKASI: Welcome New User =======
+      EmailNotificationService.sendWelcomeNewUser(
+        toEmail: _emailCtrl.text.trim(),
+        userName: _namaTokoCtrl.text.trim(),
+        password: _passwordCtrl.text.trim(),
+      );
+      // ======= END EMAIL =======
+
       if (!mounted) return;
       await showDialog(context: context, barrierDismissible: false, builder: (ctx) => Dialog(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)), child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisSize: MainAxisSize.min, children: [
         TweenAnimationBuilder<double>(tween: Tween(begin: 0, end: 1), duration: const Duration(milliseconds: 500), curve: Curves.elasticOut, builder: (_, v, c) => Transform.scale(scale: v, child: c), child: Container(width: 64, height: 64, decoration: BoxDecoration(color: const Color(0xFF10B981).withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 40))),
@@ -69,7 +79,6 @@ class _AdminRegisterUserPageState extends State<AdminRegisterUserPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8FB),
       appBar: AppBar(backgroundColor: Colors.white, elevation: 0, leading: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF1A1A2E))), title: const Text('Daftarkan User Baru', style: TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w700, fontSize: 18))),
-      // [FIX] Center + maxWidth
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),

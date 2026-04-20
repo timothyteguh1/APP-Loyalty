@@ -47,31 +47,59 @@ class _AdminLoginPageState extends State<AdminLoginPage> with TickerProviderStat
 
   @override
   void dispose() {
-    _bgAnimController.dispose(); _formAnimController.dispose();
-    _emailController.dispose(); _passwordController.dispose();
-    _emailFocus.dispose(); _passwordFocus.dispose();
+    _bgAnimController.dispose(); 
+    _formAnimController.dispose();
+    _emailController.dispose(); 
+    _passwordController.dispose();
+    _emailFocus.dispose(); 
+    _passwordFocus.dispose();
     super.dispose();
   }
 
   Future<void> _handleLogin() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    if (_emailController.text.trim().isEmpty || _passwordController.text.trim().isEmpty) { setState(() => _error = 'Email dan password wajib diisi'); return; }
+    if (_emailController.text.trim().isEmpty || _passwordController.text.trim().isEmpty) { 
+      setState(() => _error = 'Email dan password wajib diisi'); 
+      return; 
+    }
+    
     setState(() { _isLoading = true; _error = null; });
+    
     try {
       await _supabase.auth.signInWithPassword(email: _emailController.text.trim(), password: _passwordController.text.trim());
       final adminEmailsData = await AdminSupabase.client.from('app_config').select('value').eq('key', 'admin_emails').maybeSingle();
-      if (adminEmailsData == null) { await _supabase.auth.signOut(); setState(() => _error = 'Konfigurasi admin belum diatur'); return; }
+      
+      if (adminEmailsData == null) { 
+        await _supabase.auth.signOut(); 
+        if (!mounted) return; // FIX: Cek mounted sebelum setState
+        setState(() => _error = 'Konfigurasi admin belum diatur'); 
+        return; 
+      }
+      
       final String adminEmails = adminEmailsData['value'];
       final String currentEmail = _emailController.text.trim().toLowerCase();
-      if (!adminEmails.toLowerCase().contains(currentEmail)) { await _supabase.auth.signOut(); setState(() => _error = 'Akses ditolak. Hanya admin yang bisa login.'); return; }
+      
+      if (!adminEmails.toLowerCase().contains(currentEmail)) { 
+        await _supabase.auth.signOut(); 
+        if (!mounted) return; // FIX: Cek mounted sebelum setState
+        setState(() => _error = 'Akses ditolak. Hanya admin yang bisa login.'); 
+        return; 
+      }
+      
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(context, PageRouteBuilder(pageBuilder: (context, animation, secondaryAnimation) => const AdminHomePage(), transitionsBuilder: (context, animation, secondaryAnimation, child) { return FadeTransition(opacity: animation, child: SlideTransition(position: Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)), child: child)); }, transitionDuration: const Duration(milliseconds: 500)), (route) => false);
     } on AuthException catch (e) {
+      if (!mounted) return; // FIX: Cek mounted di dalam catch
       String msg = 'Login gagal';
       if (e.message.contains('Invalid login') || e.message.contains('invalid_credentials')) msg = 'Email atau password salah';
       setState(() => _error = msg);
-    } catch (e) { setState(() => _error = 'Terjadi kesalahan koneksi'); }
-    finally { if (mounted) setState(() => _isLoading = false); }
+    } catch (e) { 
+      if (!mounted) return; // FIX: Cek mounted di dalam catch
+      setState(() => _error = 'Terjadi kesalahan koneksi'); 
+    } finally { 
+      // Ini sudah aman karena kamu sudah menaruh if (mounted)
+      if (mounted) setState(() => _isLoading = false); 
+    }
   }
 
   @override
@@ -89,7 +117,6 @@ class _AdminLoginPageState extends State<AdminLoginPage> with TickerProviderStat
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 28),
-              // [FIX] Constrain form width for desktop
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 440),

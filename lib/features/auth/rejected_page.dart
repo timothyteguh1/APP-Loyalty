@@ -1,9 +1,11 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../controllers/auth_controller.dart';
 import '../../utils/ui_helpers.dart';
-import '../../utils/layout_state.dart'; // <-- IMPORT GLOBAL STATE
+import '../../utils/layout_state.dart';
+import '../../utils/email_notification_service.dart';
 import 'login_page.dart';
 
 class RejectedPage extends StatefulWidget {
@@ -69,6 +71,30 @@ class _RejectedPageState extends State<RejectedPage> with TickerProviderStateMix
     showLoading(context);
     try {
       await _auth.updateProfileForResubmit(fullName: _namaTokoCtrl.text.trim(), picName: _picNameCtrl.text.trim(), phone: _phoneCtrl.text.trim(), storeAddress: _addressCtrl.text.trim(), domisili: _domisili!, ktpNumber: _ktpCtrl.text.trim(), ktpImageBytes: _newKtpBytes, ktpFileName: _newKtpFile?.name);
+
+      // ======= EMAIL NOTIFIKASI: Notify Admin tentang resubmission =======
+      try {
+        final adminConfig = await Supabase.instance.client
+            .from('app_config')
+            .select('value')
+            .eq('key', 'admin_emails')
+            .maybeSingle();
+        if (adminConfig != null) {
+          final adminEmails = (adminConfig['value'] as String)
+              .split(',')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
+          for (final adminEmail in adminEmails) {
+            EmailNotificationService.sendResubmission(
+              toEmail: adminEmail,
+              userName: _namaTokoCtrl.text.trim(),
+            );
+          }
+        }
+      } catch (_) {}
+      // ======= END EMAIL =======
+
       if (!mounted) return;
       hideLoading(context);
       _showSuccess();
@@ -125,108 +151,90 @@ class _RejectedPageState extends State<RejectedPage> with TickerProviderStateMix
     );
   }
 
-  // ==================== INFO VIEW ====================
   Widget _buildInfoView(bool isDesktop) {
     final reason = widget.profileData['rejection_reason'] ?? 'Tidak ada alasan spesifik dari admin.';
     return Stack(key: const ValueKey('info'), children: [
       Container(height: 280, decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFB71C1C), Color(0xFFE53935)]))),
-
       SafeArea(
-        child: Stack(
-          children: [
-            // --- KONTEN UTAMA ---
-            Positioned.fill(
-              child: SingleChildScrollView(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: isDesktop ? 600 : double.infinity),
-                    child: Column(children: [
-                      const SizedBox(height: 50), // Spasi tombol switch
-
-                      // Icon
-                      ScaleTransition(scale: _iconScale, child: Container(
-                        width: 100, height: 100,
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 30, offset: const Offset(0, 10))]),
-                        child: const Icon(Icons.cancel_rounded, size: 52, color: Color(0xFFEF4444)),
-                      )),
-                      const SizedBox(height: 24),
-
-                      FadeTransition(opacity: _fade, child: SlideTransition(position: _slide, child: Column(children: [
-                        const Text('Pendaftaran Ditolak', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
-                        const SizedBox(height: 6),
-                        Text('Mohon maaf, data Anda belum bisa disetujui', style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.8))),
-                      ]))),
-                      const SizedBox(height: 32),
-
-                      // Content
-                      FadeTransition(opacity: _fade, child: SlideTransition(position: _slide, child: Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 24),
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 24, offset: const Offset(0, 8))]),
-                        child: Column(children: [
-                          // Reason box
-                          Container(
-                            width: double.infinity, padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(color: const Color(0xFFFFF8E1), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFFFE082))),
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Row(children: [
-                                Container(width: 28, height: 28, decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFF59E0B))),
-                                const SizedBox(width: 10),
-                                Text('Alasan Penolakan', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.orange[900])),
-                              ]),
-                              const SizedBox(height: 10),
-                              Text(reason, style: TextStyle(fontSize: 14, color: Colors.brown[700], height: 1.6)),
+        child: Stack(children: [
+          Positioned.fill(
+            child: SingleChildScrollView(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: isDesktop ? 600 : double.infinity),
+                  child: Column(children: [
+                    const SizedBox(height: 50),
+                    ScaleTransition(scale: _iconScale, child: Container(
+                      width: 100, height: 100,
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 30, offset: const Offset(0, 10))]),
+                      child: const Icon(Icons.cancel_rounded, size: 52, color: Color(0xFFEF4444)),
+                    )),
+                    const SizedBox(height: 24),
+                    FadeTransition(opacity: _fade, child: SlideTransition(position: _slide, child: Column(children: [
+                      const Text('Pendaftaran Ditolak', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
+                      const SizedBox(height: 6),
+                      Text('Mohon maaf, data Anda belum bisa disetujui', style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.8))),
+                    ]))),
+                    const SizedBox(height: 32),
+                    FadeTransition(opacity: _fade, child: SlideTransition(position: _slide, child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 24),
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 24, offset: const Offset(0, 8))]),
+                      child: Column(children: [
+                        Container(
+                          width: double.infinity, padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(color: const Color(0xFFFFF8E1), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFFFE082))),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Row(children: [
+                              Container(width: 28, height: 28, decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFF59E0B))),
+                              const SizedBox(width: 10),
+                              Text('Alasan Penolakan', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.orange[900])),
                             ]),
-                          ),
-                          const SizedBox(height: 28),
-
-                          // Fix button
-                          SizedBox(width: double.infinity, height: 54, child: ElevatedButton(
-                            onPressed: () => setState(() => _isEditing = true),
-                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB71C1C), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                            child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.edit_rounded, size: 20), SizedBox(width: 10), Text('Perbaiki Data & Kirim Ulang', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15))]),
-                          )),
-                          const SizedBox(height: 12),
-                          SizedBox(width: double.infinity, height: 48, child: OutlinedButton(
-                            onPressed: _logout,
-                            style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF6B7280), side: BorderSide(color: Colors.grey[300]!), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                            child: const Text('Logout', style: TextStyle(fontWeight: FontWeight.w600)),
-                          )),
-                        ]),
-                      ))),
-                      const SizedBox(height: 40),
-                    ]),
-                  ),
+                            const SizedBox(height: 10),
+                            Text(reason, style: TextStyle(fontSize: 14, color: Colors.brown[700], height: 1.6)),
+                          ]),
+                        ),
+                        const SizedBox(height: 28),
+                        SizedBox(width: double.infinity, height: 54, child: ElevatedButton(
+                          onPressed: () => setState(() => _isEditing = true),
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB71C1C), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                          child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.edit_rounded, size: 20), SizedBox(width: 10), Text('Perbaiki Data & Kirim Ulang', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15))]),
+                        )),
+                        const SizedBox(height: 12),
+                        SizedBox(width: double.infinity, height: 48, child: OutlinedButton(
+                          onPressed: _logout,
+                          style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF6B7280), side: BorderSide(color: Colors.grey[300]!), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                          child: const Text('Logout', style: TextStyle(fontWeight: FontWeight.w600)),
+                        )),
+                      ]),
+                    ))),
+                    const SizedBox(height: 40),
+                  ]),
                 ),
               ),
             ),
-
-            // --- TOMBOL SWITCH MODE ---
-            Positioned(
-              top: 16, right: 24,
-              child: InkWell(
-                onTap: () => LayoutState().toggleMode(),
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3))),
-                  child: Row(
-                    children: [
-                      Icon(isDesktop ? Icons.phone_android_rounded : Icons.computer_rounded, color: Colors.white, size: 16),
-                      const SizedBox(width: 6),
-                      Text(isDesktop ? "Mode HP" : "Mode Web", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                ),
+          ),
+          Positioned(
+            top: 16, right: 24,
+            child: InkWell(
+              onTap: () => LayoutState().toggleMode(),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3))),
+                child: Row(children: [
+                  Icon(isDesktop ? Icons.phone_android_rounded : Icons.computer_rounded, color: Colors.white, size: 16),
+                  const SizedBox(width: 6),
+                  Text(isDesktop ? "Mode HP" : "Mode Web", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                ]),
               ),
             ),
-          ],
-        ),
+          ),
+        ]),
       ),
     ]);
   }
 
-  // ==================== EDIT VIEW ====================
   Widget _buildEditView(bool isDesktop) {
     return Scaffold(
       key: const ValueKey('edit'),
@@ -238,32 +246,25 @@ class _RejectedPageState extends State<RejectedPage> with TickerProviderStateMix
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: isDesktop ? 800 : double.infinity),
               child: Column(children: [
-                // Header
                 Padding(padding: const EdgeInsets.fromLTRB(8, 4, 20, 0), child: Row(children: [
                   IconButton(onPressed: () => setState(() => _isEditing = false), icon: const Icon(Icons.arrow_back_rounded, color: Colors.white)),
                   const SizedBox(width: 4),
                   const Expanded(child: Text('Perbaiki Data', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700))),
-                  
-                  // Tombol Switch di Edit View
                   InkWell(
                     onTap: () => LayoutState().toggleMode(),
                     borderRadius: BorderRadius.circular(20),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3))),
-                      child: Row(
-                        children: [
-                          Icon(isDesktop ? Icons.phone_android_rounded : Icons.computer_rounded, color: Colors.white, size: 14),
-                          const SizedBox(width: 4),
-                          Text(isDesktop ? "HP" : "Web", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                        ],
-                      ),
+                      child: Row(children: [
+                        Icon(isDesktop ? Icons.phone_android_rounded : Icons.computer_rounded, color: Colors.white, size: 14),
+                        const SizedBox(width: 4),
+                        Text(isDesktop ? "HP" : "Web", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                      ]),
                     ),
                   ),
                 ])),
                 const SizedBox(height: 12),
-
-                // Form
                 Expanded(child: Container(
                   decoration: const BoxDecoration(color: Color(0xFFF5F5F5), borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
                   child: SingleChildScrollView(padding: const EdgeInsets.all(24), child: Column(children: [
@@ -272,22 +273,14 @@ class _RejectedPageState extends State<RejectedPage> with TickerProviderStateMix
                       _f('Nama PIC *', _picNameCtrl, Icons.person_outline_rounded),
                       _f('No HP *', _phoneCtrl, Icons.phone_android_rounded, kb: TextInputType.phone),
                       _f('Alamat Toko *', _addressCtrl, Icons.location_on_outlined, lines: 2),
-                      // Domisili
                       Padding(padding: const EdgeInsets.only(bottom: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         const Text('Domisili *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          value: _domisili,
-                          decoration: _dec(Icons.map_outlined),
-                          items: _domList.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                          onChanged: (v) => setState(() => _domisili = v),
-                        ),
+                        DropdownButtonFormField<String>(value: _domisili, decoration: _dec(Icons.map_outlined), items: _domList.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: (v) => setState(() => _domisili = v)),
                       ])),
                       _f('Nomor KTP *', _ktpCtrl, Icons.credit_card_rounded, kb: TextInputType.number),
                     ]),
                     const SizedBox(height: 16),
-
-                    // KTP Image
                     _editCard([
                       const Text('Foto KTP', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
                       const SizedBox(height: 10),
@@ -306,8 +299,6 @@ class _RejectedPageState extends State<RejectedPage> with TickerProviderStateMix
                     const SizedBox(height: 30),
                   ])),
                 )),
-
-                // Bottom
                 Container(
                   color: const Color(0xFFF5F5F5),
                   padding: EdgeInsets.fromLTRB(24, 12, 24, MediaQuery.of(context).padding.bottom + 16),
@@ -339,8 +330,7 @@ class _RejectedPageState extends State<RejectedPage> with TickerProviderStateMix
     return Padding(padding: const EdgeInsets.only(bottom: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
       const SizedBox(height: 8),
-      TextFormField(controller: c, keyboardType: kb, maxLines: lines, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-        decoration: _dec(icon)),
+      TextFormField(controller: c, keyboardType: kb, maxLines: lines, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500), decoration: _dec(icon)),
     ]));
   }
 

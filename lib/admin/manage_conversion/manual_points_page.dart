@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../admin_supabase.dart';
+import '../../utils/email_notification_service.dart';
 
 class ManualPointsPage extends StatefulWidget {
   const ManualPointsPage({super.key});
@@ -91,6 +92,22 @@ class _ManualPointsPageState extends State<ManualPointsPage> {
       await _admin.from('profiles').update({'points': newPoints, 'updated_at': DateTime.now().toIso8601String()}).eq('id', userId);
       await _admin.from('point_history').insert({'user_id': userId, 'amount': actualChange, 'description': '${_isAdd ? "Tambah" : "Kurang"} manual: ${_reasonCtrl.text.trim()}', 'reference_type': 'MANUAL', 'reference_id': 'MANUAL-${DateTime.now().millisecondsSinceEpoch}'});
 
+      // ======= EMAIL NOTIFIKASI: Manual Poin =======
+      String? userEmail;
+      try {
+        final userData = await _admin.auth.admin.getUserById(userId);
+        userEmail = userData.user?.email;
+      } catch (_) {}
+      if (userEmail != null) {
+        EmailNotificationService.sendManualPoints(
+          toEmail: userEmail,
+          userName: userName,
+          amount: actualChange,
+          reason: _reasonCtrl.text.trim(),
+        );
+      }
+      // ======= END EMAIL =======
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${actualChange > 0 ? "+" : ""}$actualChange poin untuk $userName'), backgroundColor: const Color(0xFF10B981)));
         _amountCtrl.clear(); _reasonCtrl.clear(); setState(() => _selectedUser = null); _fetchUsers();
@@ -113,7 +130,6 @@ class _ManualPointsPageState extends State<ManualPointsPage> {
       appBar: AppBar(backgroundColor: Colors.white, elevation: 0, leading: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF1A1A2E))), title: const Text('Manual Poin', style: TextStyle(color: Color(0xFF1A1A2E), fontWeight: FontWeight.w700, fontSize: 18))),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFFF59E0B)))
-          // [FIX] Center + maxWidth
           : Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 640),

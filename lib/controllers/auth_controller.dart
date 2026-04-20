@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/email_notification_service.dart';
 
 class AuthController {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -70,6 +71,30 @@ class AuthController {
         }
       }
 
+      // ======= EMAIL NOTIFIKASI: Notify Admin tentang pendaftaran baru =======
+      try {
+        final adminConfig = await _supabase
+            .from('app_config')
+            .select('value')
+            .eq('key', 'admin_emails')
+            .maybeSingle();
+        if (adminConfig != null) {
+          final adminEmails = (adminConfig['value'] as String)
+              .split(',')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList();
+          for (final adminEmail in adminEmails) {
+            EmailNotificationService.sendNewRegistration(
+              toEmail: adminEmail,
+              userName: fullName,
+              userPhone: phone,
+            );
+          }
+        }
+      } catch (_) {}
+      // ======= END EMAIL =======
+
       return {
         'needsEmailVerification': needsEmailVerification,
         'email': email,
@@ -107,7 +132,7 @@ class AuthController {
   }
 
   // ============================================================
-  // [BARU - POIN 2] LUPA PASSWORD — Kirim email reset
+  // LUPA PASSWORD — Kirim email reset
   // ============================================================
   Future<void> sendPasswordResetEmail({required String email}) async {
     try {
