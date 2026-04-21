@@ -123,14 +123,15 @@ class AccurateService {
   }
 
   // ============================================================
-  // FAKTUR PENJUALAN (INVOICE)
+  // FAKTUR PENJUALAN - LIST
   // ============================================================
   static Future<Map<String, dynamic>> fetchSalesInvoices(
     String host, String session, String token, { int? customerId, int page = 1, int pageSize = 50,
   }) async {
     final params = <String, String>{
       'sp.page': '$page', 'sp.pageSize': '$pageSize',
-      'fields': 'id,number,transDate,dueDate,grandTotal,totalAmount,status,paymentStatus,customer.id,customer.name',
+      // [FIX] Tambah statusName agar bisa diambil dari list endpoint
+      'fields': 'id,number,transDate,dueDate,grandTotal,totalAmount,statusName,status,customer.id,customer.name',
       'filter.transDate.val[0]': '01/01/2000',
       'filter.transDate.val[1]': '31/12/2099',
       'filter.transDate.op': 'BETWEEN', 
@@ -144,19 +145,39 @@ class AccurateService {
     final queryString = params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
     final url = '$host/accurate/api/sales-invoice/list.do?$queryString';
     
-    // [PERBAIKAN] Mengirimkan Authorization: Bearer $token
     final data = await _proxy(accurateUrl: url, headers: {
       'X-Session-ID': session,
       'Authorization': 'Bearer $token'
     });
     
-    print('FULL RESPON API FAKTUR:');
+    print('FULL RESPON API FAKTUR (LIST):');
     print(jsonEncode(data));
     print('--------------------------');
 
     if (data['s'] == false) {
       if (data['d']?.toString().contains('session') == true) throw 'SESSION_EXPIRED';
       throw data['d']?.toString() ?? 'Gagal ambil faktur';
+    }
+    return data;
+  }
+
+  // ============================================================
+  // FAKTUR PENJUALAN - DETAIL (BARU!)
+  // Endpoint ini mengembalikan info lengkap termasuk status bayar
+  // ============================================================
+  static Future<Map<String, dynamic>> fetchInvoiceDetail(
+    String host, String session, String token, int invoiceId,
+  ) async {
+    final url = '$host/accurate/api/sales-invoice/detail.do?id=$invoiceId';
+    
+    final data = await _proxy(accurateUrl: url, headers: {
+      'X-Session-ID': session,
+      'Authorization': 'Bearer $token'
+    });
+
+    if (data['s'] == false) {
+      if (data['d']?.toString().contains('session') == true) throw 'SESSION_EXPIRED';
+      throw data['d']?.toString() ?? 'Gagal ambil detail faktur';
     }
     return data;
   }
@@ -169,7 +190,7 @@ class AccurateService {
   }) async {
     final params = <String, String>{
       'sp.page': '$page', 'sp.pageSize': '$pageSize',
-      'fields': 'id,number,transDate,totalAmount,grandTotal,status,paymentStatus,customer.id,customer.name',
+      'fields': 'id,number,transDate,totalAmount,grandTotal,statusName,status,customer.id,customer.name',
       'filter.transDate.val[0]': '01/01/2000',
       'filter.transDate.val[1]': '31/12/2099',
       'filter.transDate.op': 'BETWEEN',
@@ -182,7 +203,6 @@ class AccurateService {
 
     final queryString = params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
     
-    // [PERBAIKAN] Mengirimkan Authorization: Bearer $token
     final data = await _proxy(accurateUrl: '$host/accurate/api/sales-return/list.do?$queryString', headers: {
       'X-Session-ID': session,
       'Authorization': 'Bearer $token'
@@ -221,7 +241,123 @@ class AccurateService {
   }
 
   // ============================================================
+  // HELPER: Cek apakah faktur LUNAS dari data detail
+  // 
+  // Dari API Accurate, faktur yang sudah lunas punya:
+  //   status: "PAID", statusName: "Lunas", outstanding: false,
+  //   primeOwing: 0, primeReceipt: (jumlah bayar), receiptHistory: [...]
+  //
+  // Faktur belum lunas punya:
+  //   status: "OUTSTANDING", statusName: "Belum Lunas", outstanding: true,
+  //   primeOwing: (sisa), primeReceipt: 0, receiptHistory: []
+  // ============================================================
+  static bool _isInvoiceFullyPaid(Map<String, dynamic> detail) {
+    final String statusName = (detail['statusName'] ?? '').toString();
+    final String status = (detail['status'] ?? '').toString().toUpperCase();
+    
+    // --- TOLAK DULU jika jelas-jelas belum lunas ---
+    // Accurate pakai "Belum Lunas" untuk yang belum dibayar
+    if (statusName.toLowerCase().contains('belum')) return false;
+    // status "OUTSTANDING" = masih ada piutang
+    if (status == 'OUTSTANDING') return false;
+    // outstanding flag
+    if (detail['outstanding'] == true) return false;
+
+    // --- CEK POSITIF: Apakah memang lunas? ---
+    
+    // 1. status == "PAID" (paling reliable dari Accurate)
+    if (status == 'PAID') return true;
+
+    // 2. statusName exact match "Lunas" atau "Closed"
+    final String statusUpper = statusName.toUpperCase();
+    if (statusUpper == 'LUNAS') return true;
+    if (statusUpper == 'CLOSED') return true;
+
+    // 3. Cek primeOwing (sisa piutang) == 0 DAN primeReceipt > 0
+    final double primeOwing = (detail['primeOwing'] as num?)?.toDouble() ?? -1;
+    final double primeReceipt = (detail['primeReceipt'] as num?)?.toDouble() ?? 0;
+    if (primeOwing == 0 && primeReceipt > 0) return true;
+
+    // 4. Cek ada receiptHistory (bukti pembayaran)
+    final receiptHistory = detail['receiptHistory'];
+    if (receiptHistory is List && receiptHistory.isNotEmpty) {
+      // Ada riwayat pembayaran, cek apakah total bayar cukup
+      final double totalAmount = (detail['totalAmount'] as num?)?.toDouble() ?? 0;
+      double totalPaid = 0;
+      for (final receipt in receiptHistory) {
+        totalPaid += (receipt['historyAmount'] as num?)?.toDouble() ?? 0;
+      }
+      if (totalAmount > 0 && totalPaid >= totalAmount) return true;
+    }
+
+    // 5. Fallback: remainingPayment
+    final remaining = detail['remainingPayment'] ?? detail['remainingAmount'];
+    if (remaining != null) {
+      final double remainVal = (remaining as num?)?.toDouble() ?? -1;
+      if (remainVal == 0) return true;
+    }
+
+    return false;
+  }
+
+  // ============================================================
+  // HELPER: Ambil tanggal bayar/close dari detail faktur
+  // Dari API Accurate, field yang tersedia:
+  //   lastPaymentDate: "20/04/2026" (tanggal pembayaran terakhir)
+  //   receiptHistory: [{ historyDate: "20/04/2026", ... }]
+  // Return null kalau tidak ditemukan
+  // ============================================================
+  static DateTime? _getPaymentDate(Map<String, dynamic> detail) {
+    // 1. Coba lastPaymentDate (paling reliable)
+    final candidates = [
+      detail['lastPaymentDate'],
+      detail['closeDate'],
+      detail['closedDate'],
+      detail['paymentDate'],
+    ];
+
+    for (final raw in candidates) {
+      if (raw == null) continue;
+      final str = raw.toString().trim();
+      if (str.isEmpty) continue;
+      
+      try {
+        if (str.contains('/')) {
+          return DateTime.parse(_parseAccurateDate(str));
+        }
+        return DateTime.parse(str);
+      } catch (_) {
+        continue;
+      }
+    }
+
+    // 2. Fallback: ambil dari receiptHistory (tanggal pembayaran terakhir)
+    final receiptHistory = detail['receiptHistory'];
+    if (receiptHistory is List && receiptHistory.isNotEmpty) {
+      // Ambil receipt terakhir (yang paling akhir = pelunasan)
+      final lastReceipt = receiptHistory.last;
+      final historyDate = lastReceipt['historyDate']?.toString().trim() ?? '';
+      if (historyDate.isNotEmpty) {
+        try {
+          if (historyDate.contains('/')) {
+            return DateTime.parse(_parseAccurateDate(historyDate));
+          }
+          return DateTime.parse(historyDate);
+        } catch (_) {}
+      }
+    }
+
+    return null;
+  }
+
+  // ============================================================
   // FUNGSI INTI: SYNC FAKTUR & RETUR
+  // 
+  // ATURAN POIN:
+  // ✅ Case A: Lunas + bayar sebelum/tepat jatuh tempo → DAPAT poin
+  // ❌ Case B: Lunas + bayar setelah jatuh tempo → TIDAK dapat poin
+  // ❌ Case C: Belum lunas (bayar sebagian) → TIDAK dapat poin
+  // ➖ Retur: Poin dipotong sesuai nominal retur
   // ============================================================
   static Future<SyncResult> syncInvoicesToPoints({
     required SupabaseClient admin,
@@ -238,7 +374,7 @@ class AccurateService {
       onProgress?.call('Mencari data user...');
       print('=== MULAI SYNC ===');
 
-      // Ambil token dari database untuk dikirimkan ke request
+      // Ambil token dari database
       final tokenConfig = await admin.from('app_config').select('value').eq('key', 'accurate_access_token').maybeSingle();
       final String token = tokenConfig?['value']?.toString() ?? '';
 
@@ -262,71 +398,137 @@ class AccurateService {
         final int conversionRate = (user['point_conversion_rate'] as num?)?.toInt() ?? globalRate;
         final int currentPoints = (user['points'] as num?)?.toInt() ?? 0;
 
-        print('Memeriksa Toko: $userName (ID: $accurateCustomerId)');
+        print('\nMemeriksa Toko: $userName (ID: $accurateCustomerId)');
         onProgress?.call('Sync Toko: $userName...');
 
         try {
           int userPointsGained = 0; 
           
-          // --- 1. PROSES FAKTUR PENJUALAN ---
+          // =============================================
+          // 1. PROSES FAKTUR PENJUALAN
+          // =============================================
           int page = 1; bool hasMore = true;
           while (hasMore) {
-            // [PERBAIKAN] Mengirim parameter token
             final result = await fetchSalesInvoices(host, session, token, customerId: int.tryParse(accurateCustomerId), page: page, pageSize: 50);
             final List<dynamic> invoices = result['d'] ?? [];
             final int totalCount = (result['totalCount'] as num?)?.toInt() ?? invoices.length;
 
             for (final invoice in invoices) {
               totalInvoicesChecked++;
+              final int invoiceId = (invoice['id'] as num?)?.toInt() ?? 0;
               final String invoiceNumber = invoice['number']?.toString() ?? '';
-              final double nominalFaktur = (invoice['grandTotal'] as num?)?.toDouble() ?? (invoice['totalAmount'] as num?)?.toDouble() ?? 0;
-              final String dueDateStr = invoice['dueDate']?.toString() ?? ''; 
-              final String status = invoice['status']?.toString().toUpperCase() ?? invoice['paymentStatus']?.toString().toUpperCase() ?? ''; 
 
-              if (invoiceNumber.isEmpty || nominalFaktur <= 0) { 
-                print(' -> [SKIP] Faktur $invoiceNumber: Data kosong atau 0.');
+              if (invoiceNumber.isEmpty || invoiceId <= 0) { 
+                print('  -> [SKIP] Faktur $invoiceNumber: Data kosong atau ID 0.');
                 totalSkipped++; continue; 
               }
 
-              // [SYARAT MUTLAK]: Status harus PAID (Lunas)
-              if (status != 'PAID') {
-                print(' -> [SKIP] Faktur $invoiceNumber: Belum Lunas (Status: $status).');
-                totalSkipped++; continue; 
-              }
-
+              // --- Anti-double: Sudah pernah disync? ---
               final existing = await admin.from('point_history').select('id').eq('reference_type', 'INVOICE').eq('reference_id', invoiceNumber).eq('user_id', userId).maybeSingle();
               if (existing != null) { 
-                print(' -> [SKIP] Faktur $invoiceNumber: Sudah pernah disync.');
+                print('  -> [SKIP] Faktur $invoiceNumber: Sudah pernah disync.');
                 totalSkipped++; continue; 
               }
 
-              final String targetDateStr = dueDateStr.isNotEmpty ? dueDateStr : (invoice['transDate']?.toString() ?? '');
-              final DateTime dueDate = DateTime.parse(_parseAccurateDate(targetDateStr));
-              final DateTime now = DateTime.now(); 
+              // --- AMBIL DETAIL FAKTUR untuk cek status bayar ---
+              onProgress?.call('Detail faktur $invoiceNumber...');
+              print('  -> Mengambil detail faktur $invoiceNumber (id=$invoiceId)...');
+              
+              Map<String, dynamic> detailData;
+              try {
+                final detailResponse = await fetchInvoiceDetail(host, session, token, invoiceId);
+                detailData = (detailResponse['d'] is Map) 
+                    ? Map<String, dynamic>.from(detailResponse['d']) 
+                    : {};
+                
+                // LOG LENGKAP untuk debugging
+                print('  -> DETAIL FAKTUR $invoiceNumber:');
+                print('     ${jsonEncode(detailData)}');
+              } catch (e) {
+                print('  -> [ERROR] Gagal ambil detail $invoiceNumber: $e');
+                errors.add('Faktur $invoiceNumber: Gagal ambil detail ($e)');
+                totalSkipped++; continue;
+              }
 
-              if (now.isAfter(dueDate.add(const Duration(days: 1)))) { 
-                print(' -> [SKIP] Faktur $invoiceNumber: Telat Bayar (Jatuh Tempo: $dueDate).');
+              // --- CEK 1: Apakah LUNAS? ---
+              final bool isFullyPaid = _isInvoiceFullyPaid(detailData);
+              final String statusDebug = detailData['statusName']?.toString() ?? detailData['status']?.toString() ?? 'UNKNOWN';
+              
+              if (!isFullyPaid) {
+                print('  -> [SKIP] Faktur $invoiceNumber: BELUM LUNAS (status: $statusDebug)');
+                totalSkipped++; continue;
+              }
+              print('  -> [OK] Faktur $invoiceNumber: LUNAS (status: $statusDebug)');
+
+              // --- CEK 2: Apakah bayar SEBELUM jatuh tempo? ---
+              final String dueDateStr = detailData['dueDate']?.toString() ?? invoice['dueDate']?.toString() ?? '';
+              
+              if (dueDateStr.isEmpty) {
+                print('  -> [SKIP] Faktur $invoiceNumber: Tidak ada tanggal jatuh tempo.');
+                totalSkipped++; continue;
+              }
+
+              final DateTime dueDate = DateTime.parse(_parseAccurateDate(dueDateStr));
+              
+              // Coba ambil tanggal pelunasan dari detail
+              DateTime? paymentDate = _getPaymentDate(detailData);
+              
+              if (paymentDate != null) {
+                // Ada tanggal pelunasan dari API → bandingkan dengan jatuh tempo
+                print('  -> Tanggal bayar: $paymentDate, Jatuh tempo: $dueDate');
+                
+                // Bayar SETELAH jatuh tempo? → tidak dapat poin
+                // isAfter: bayar 23/04 > tempo 22/04 → true → SKIP
+                // isAfter: bayar 22/04 > tempo 22/04 → false → LOLOS (tepat waktu)
+                // isAfter: bayar 20/04 > tempo 22/04 → false → LOLOS (lebih awal)
+                if (paymentDate.isAfter(dueDate)) {
+                  print('  -> [SKIP] Faktur $invoiceNumber: TELAT BAYAR (bayar: $paymentDate, tempo: $dueDate)');
+                  totalSkipped++; continue;
+                }
+              } else {
+                // Tidak ada tanggal bayar dari detail → fallback: 
+                // Karena sudah Lunas (Closed), gunakan tanggal hari ini sebagai batas.
+                // Jika hari ini sudah melewati jatuh tempo, skip.
+                final DateTime now = DateTime.now();
+                print('  -> [INFO] Tidak ada tanggal bayar di detail, fallback ke tanggal sekarang ($now) vs jatuh tempo ($dueDate)');
+                
+                if (now.isAfter(dueDate)) {
+                  print('  -> [SKIP] Faktur $invoiceNumber: Sudah melewati jatuh tempo (sekarang: $now, tempo: $dueDate). Tidak bisa verifikasi tanggal bayar.');
+                  totalSkipped++; continue;
+                }
+              }
+
+              // --- HITUNG POIN ---
+              final double nominalFaktur = (detailData['grandTotal'] as num?)?.toDouble() 
+                  ?? (detailData['totalAmount'] as num?)?.toDouble() 
+                  ?? (invoice['grandTotal'] as num?)?.toDouble() 
+                  ?? (invoice['totalAmount'] as num?)?.toDouble() ?? 0;
+
+              if (nominalFaktur <= 0) { 
+                print('  -> [SKIP] Faktur $invoiceNumber: Nominal 0 atau negatif.');
                 totalSkipped++; continue; 
               }
 
               final int pointsEarned = (nominalFaktur / conversionRate).floor();
               if (pointsEarned <= 0) { totalSkipped++; continue; }
 
+              // --- SIMPAN POIN ---
               await admin.from('point_history').insert({
                 'user_id': userId, 'amount': pointsEarned, 'description': 'Faktur Lunas #$invoiceNumber',
                 'reference_type': 'INVOICE', 'reference_id': invoiceNumber, 'created_at': DateTime.now().toIso8601String(),
               });
               userPointsGained += pointsEarned;
               totalPointsAdded += pointsEarned;
-              print(' -> [SUCCESS] Faktur $invoiceNumber: Berhasil ditambah +$pointsEarned Poin!');
+              print('  -> [SUCCESS] Faktur $invoiceNumber: +$pointsEarned Poin (nominal: $nominalFaktur, rate: $conversionRate)');
             }
             hasMore = (page * 50) < totalCount; page++; if (page > 10) hasMore = false;
           }
 
-          // --- 2. PROSES RETUR PENJUALAN ---
+          // =============================================
+          // 2. PROSES RETUR PENJUALAN
+          // =============================================
           int pageRetur = 1; bool hasMoreRetur = true;
           while (hasMoreRetur) {
-            // [PERBAIKAN] Mengirim parameter token
             final resultRetur = await fetchSalesReturns(host, session, token, customerId: int.tryParse(accurateCustomerId), page: pageRetur, pageSize: 50);
             final List<dynamic> returns = resultRetur['d'] ?? [];
             final int totalCountRetur = (resultRetur['totalCount'] as num?)?.toInt() ?? returns.length;
@@ -350,30 +552,32 @@ class AccurateService {
               });
               userPointsGained -= pointsDeducted; 
               totalPointsDeducted += pointsDeducted;
-              print(' -> [SUCCESS] Retur $returnNumber: Berhasil dipotong -$pointsDeducted Poin!');
+              print('  -> [SUCCESS] Retur $returnNumber: -$pointsDeducted Poin');
             }
             hasMoreRetur = (pageRetur * 50) < totalCountRetur; pageRetur++; if (pageRetur > 10) hasMoreRetur = false;
           }
 
-          // --- 3. UPDATE PROFIL POIN ---
+          // =============================================
+          // 3. UPDATE PROFIL POIN
+          // =============================================
           if (userPointsGained != 0) { 
             int finalPoints = currentPoints + userPointsGained;
             if (finalPoints < 0) finalPoints = 0; 
             await admin.from('profiles').update({'points': finalPoints, 'updated_at': DateTime.now().toIso8601String()}).eq('id', userId);
             totalUsersAffected++;
-            print(' => [UPDATE] Saldo akhir toko $userName diperbarui menjadi $finalPoints Poin.');
+            print('  => [UPDATE] Saldo akhir toko $userName: $finalPoints Poin (sebelumnya: $currentPoints, perubahan: ${userPointsGained > 0 ? "+$userPointsGained" : "$userPointsGained"})');
           }
 
         } catch (e) {
           if (e.toString() == 'SESSION_EXPIRED') rethrow;
           errors.add('$userName: $e');
-          print(' -> [ERROR] $userName: $e');
+          print('  -> [ERROR] $userName: $e');
         }
       }
 
-      print('=== SYNC SELESAI ===');
+      print('\n=== SYNC SELESAI ===');
       return SyncResult(
-        message: 'Sync Selesai!\nFaktur Lunas & Tepat Waktu: $totalInvoicesChecked (+ $totalPointsAdded Poin).\nRetur: $totalReturnsChecked (- $totalPointsDeducted Poin).\nTotal $totalUsersAffected user diperbarui.',
+        message: 'Sync Selesai!\nFaktur dicek: $totalInvoicesChecked (+ $totalPointsAdded Poin).\nRetur dicek: $totalReturnsChecked (- $totalPointsDeducted Poin).\nTotal $totalUsersAffected user diperbarui.\nDilewati: $totalSkipped.',
         totalInvoicesChecked: totalInvoicesChecked, totalPointsAdded: totalPointsAdded,
         totalUsersAffected: totalUsersAffected, totalSkipped: totalSkipped, errors: errors,
       );
