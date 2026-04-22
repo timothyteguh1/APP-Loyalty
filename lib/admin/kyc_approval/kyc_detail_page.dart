@@ -29,54 +29,29 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
   }
 
   @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
-  }
+  void dispose() { _animController.dispose(); super.dispose(); }
 
   Future<void> _approveUser() async {
-    final confirm = await _showConfirmDialog(
-      title: 'Approve User',
-      message: 'Yakin ingin menyetujui "${widget.store['full_name'] ?? 'User ini'}"?',
-      confirmText: 'Approve',
-      confirmColor: const Color(0xFF10B981),
-      icon: Icons.check_circle_rounded,
-    );
+    final confirm = await _showConfirmDialog(title: 'Approve User', message: 'Yakin ingin menyetujui "${widget.store['full_name'] ?? 'User ini'}"?', confirmText: 'Approve', confirmColor: const Color(0xFF10B981), icon: Icons.check_circle_rounded);
     if (confirm != true) return;
     await _updateStatus('APPROVED', null);
   }
 
   Future<void> _rejectUser() async {
     final reasonController = TextEditingController();
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(children: [
-          Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.cancel_rounded, color: Color(0xFFEF4444), size: 20)),
-          const SizedBox(width: 12),
-          const Text('Tolak User', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
-        ]),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('"${widget.store['full_name'] ?? '-'}" akan ditolak.', style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
-          const SizedBox(height: 16),
-          const Text('Alasan penolakan *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          TextField(controller: reasonController, maxLines: 3, enableInteractiveSelection: true, decoration: InputDecoration(hintText: 'Contoh: Foto KTP tidak jelas, data tidak lengkap...', hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13), filled: true, fillColor: const Color(0xFFF9FAFB), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5)))),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            onPressed: () {
-              if (reasonController.text.trim().isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Alasan wajib diisi'), backgroundColor: Color(0xFFEF4444))); return; }
-              Navigator.pop(context, true);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0),
-            child: const Text('Tolak', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+    final confirm = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.cancel_rounded, color: Color(0xFFEF4444), size: 20)), const SizedBox(width: 12), const Text('Tolak User', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18))]),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('"${widget.store['full_name'] ?? '-'}" akan ditolak.', style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
+        const SizedBox(height: 16), const Text('Alasan penolakan *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)), const SizedBox(height: 8),
+        TextField(controller: reasonController, maxLines: 3, enableInteractiveSelection: true, decoration: InputDecoration(hintText: 'Contoh: Foto KTP tidak jelas...', hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13), filled: true, fillColor: const Color(0xFFF9FAFB), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5)))),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
+        ElevatedButton(onPressed: () { if (reasonController.text.trim().isEmpty) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Alasan wajib diisi'), backgroundColor: Color(0xFFEF4444))); return; } Navigator.pop(context, true); }, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), child: const Text('Tolak', style: TextStyle(color: Colors.white))),
+      ],
+    ));
     if (confirm != true) return;
     await _updateStatus('REJECTED', reasonController.text.trim());
   }
@@ -85,25 +60,18 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
     setState(() => _isProcessing = true);
     try {
       final updateData = <String, dynamic>{'approval_status': status, 'updated_at': DateTime.now().toIso8601String()};
-      if (status == 'REJECTED' && reason != null && reason.isNotEmpty) { updateData['rejection_reason'] = reason; }
-      else if (status == 'APPROVED') { updateData['rejection_reason'] = null; }
-
+      if (status == 'REJECTED' && reason != null && reason.isNotEmpty) updateData['rejection_reason'] = reason;
+      else if (status == 'APPROVED') updateData['rejection_reason'] = null;
       await _admin.from('profiles').update(updateData).eq('id', widget.store['id']);
 
-      // ======= EMAIL NOTIFIKASI =======
       final userName = widget.store['full_name'] ?? 'User';
       final userId = widget.store['id'] as String;
       String? userEmail;
       try { final userData = await _admin.auth.admin.getUserById(userId); userEmail = userData.user?.email; } catch (_) {}
-
       if (userEmail != null) {
-        if (status == 'APPROVED') {
-          EmailNotificationService.sendApproved(toEmail: userEmail, userName: userName);
-        } else if (status == 'REJECTED') {
-          EmailNotificationService.sendRejected(toEmail: userEmail, userName: userName, reason: reason ?? '-');
-        }
+        if (status == 'APPROVED') EmailNotificationService.sendApproved(toEmail: userEmail, userName: userName);
+        else if (status == 'REJECTED') EmailNotificationService.sendRejected(toEmail: userEmail, userName: userName, reason: reason ?? '-');
       }
-      // ======= END EMAIL =======
 
       if (!mounted) return;
       await showDialog(context: context, barrierDismissible: false, builder: (context) => _SuccessDialog(isApproved: status == 'APPROVED', userName: widget.store['full_name'] ?? 'User'));
@@ -111,38 +79,21 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
       Navigator.pop(context, true);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e'), backgroundColor: const Color(0xFFEF4444)));
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
+    } finally { if (mounted) setState(() => _isProcessing = false); }
   }
 
-  // ============================================================
-  // HAPUS USER PERMANEN
-  // ============================================================
   Future<void> _deleteUser() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(children: [
-          Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 20)),
-          const SizedBox(width: 12),
-          const Text('Hapus User', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
-        ]),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('"${widget.store['full_name'] ?? '-'}" akan dihapus PERMANEN.', style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
-          const SizedBox(height: 12),
-          Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFFCA5A5))),
-            child: const Row(children: [Icon(Icons.warning_rounded, color: Color(0xFFEF4444), size: 16), SizedBox(width: 8), Expanded(child: Text('Semua data poin, riwayat, dan voucher user ini akan hilang selamanya.', style: TextStyle(fontSize: 12, color: Color(0xFFB91C1C), height: 1.4)))])),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), child: const Text('Ya, Hapus Permanen', style: TextStyle(color: Colors.white))),
-        ],
-      ),
-    );
+    final confirm = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 20)), const SizedBox(width: 12), const Text('Hapus User', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18))]),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('"${widget.store['full_name'] ?? '-'}" akan dihapus PERMANEN.', style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))), const SizedBox(height: 12),
+        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFFCA5A5))),
+          child: const Row(children: [Icon(Icons.warning_rounded, color: Color(0xFFEF4444), size: 16), SizedBox(width: 8), Expanded(child: Text('Semua data poin, riwayat, dan voucher user ini akan hilang selamanya.', style: TextStyle(fontSize: 12, color: Color(0xFFB91C1C), height: 1.4)))])),
+      ]),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal', style: TextStyle(color: Colors.grey))), ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), child: const Text('Ya, Hapus Permanen', style: TextStyle(color: Colors.white)))],
+    ));
     if (confirm != true) return;
-
     setState(() => _isProcessing = true);
     try {
       final result = await _admin.rpc('admin_delete_user', params: {'target_user_id': widget.store['id']});
@@ -150,110 +101,49 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
       if (result != null && result['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'User berhasil dihapus'), backgroundColor: const Color(0xFF10B981), behavior: SnackBarBehavior.floating, margin: const EdgeInsets.all(20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
         Navigator.pop(context, true);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result?['message'] ?? 'Gagal menghapus user'), backgroundColor: const Color(0xFFEF4444)));
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e'), backgroundColor: const Color(0xFFEF4444)));
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
+      } else { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result?['message'] ?? 'Gagal menghapus user'), backgroundColor: const Color(0xFFEF4444))); }
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e'), backgroundColor: const Color(0xFFEF4444))); }
+    finally { if (mounted) setState(() => _isProcessing = false); }
   }
 
-  // ============================================================
-  // SET PASSWORD LANGSUNG (tanpa opsi email reset)
-  // ============================================================
   Future<void> _resetUserPassword() async {
     final userId = widget.store['id'];
     String? userEmail;
+    try { final userData = await _admin.auth.admin.getUserById(userId); userEmail = userData.user?.email; } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal ambil data user: $e'), backgroundColor: const Color(0xFFEF4444))); return; }
+    if (userEmail == null || userEmail.isEmpty) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email user tidak ditemukan'), backgroundColor: Color(0xFFEF4444))); return; }
 
-    try {
-      final userData = await _admin.auth.admin.getUserById(userId);
-      userEmail = userData.user?.email;
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal ambil data user: $e'), backgroundColor: const Color(0xFFEF4444)));
-      return;
-    }
-
-    if (userEmail == null || userEmail.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email user tidak ditemukan'), backgroundColor: Color(0xFFEF4444)));
-      return;
-    }
-
-    // Langsung tampilkan dialog set password baru
     final passCtrl = TextEditingController();
     bool showPass = false;
-
-    final newPass = await showDialog<String>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(children: [
-            Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.lock_reset_rounded, color: Color(0xFFF59E0B), size: 20)),
-            const SizedBox(width: 12),
-            const Text('Set Password Baru', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
-          ]),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('User: ${widget.store['full_name'] ?? '-'}', style: const TextStyle(fontWeight: FontWeight.w600)),
-            Text('Email: $userEmail', style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))),
-            const SizedBox(height: 16),
-            TextField(controller: passCtrl, obscureText: !showPass, decoration: InputDecoration(
-              hintText: 'Password baru (min 6 karakter)', hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13),
-              prefixIcon: Icon(Icons.lock_outline_rounded, size: 20, color: Colors.grey[400]),
-              suffixIcon: IconButton(icon: Icon(showPass ? Icons.visibility_rounded : Icons.visibility_off_rounded, size: 20, color: Colors.grey[400]), onPressed: () => setD(() => showPass = !showPass)),
-              filled: true, fillColor: const Color(0xFFF9FAFB),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFF59E0B), width: 1.5)),
-            )),
-          ]),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
-            ElevatedButton(
-              onPressed: () {
-                if (passCtrl.text.trim().length < 6) { ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Minimal 6 karakter'), backgroundColor: Color(0xFFEF4444))); return; }
-                Navigator.pop(ctx, passCtrl.text.trim());
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF59E0B), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0),
-              child: const Text('Simpan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ),
-      ),
-    );
-
+    final newPass = await showDialog<String>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setD) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.lock_reset_rounded, color: Color(0xFFF59E0B), size: 20)), const SizedBox(width: 12), const Text('Set Password Baru', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18))]),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('User: ${widget.store['full_name'] ?? '-'}', style: const TextStyle(fontWeight: FontWeight.w600)),
+        Text('Email: $userEmail', style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280))), const SizedBox(height: 16),
+        TextField(controller: passCtrl, obscureText: !showPass, decoration: InputDecoration(hintText: 'Password baru (min 6 karakter)', hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13), prefixIcon: Icon(Icons.lock_outline_rounded, size: 20, color: Colors.grey[400]), suffixIcon: IconButton(icon: Icon(showPass ? Icons.visibility_rounded : Icons.visibility_off_rounded, size: 20, color: Colors.grey[400]), onPressed: () => setD(() => showPass = !showPass)), filled: true, fillColor: const Color(0xFFF9FAFB), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFF59E0B), width: 1.5)))),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
+        ElevatedButton(onPressed: () { if (passCtrl.text.trim().length < 6) { ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Minimal 6 karakter'), backgroundColor: Color(0xFFEF4444))); return; } Navigator.pop(ctx, passCtrl.text.trim()); }, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF59E0B), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), child: const Text('Simpan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
+      ],
+    )));
     if (newPass == null) return;
-
     setState(() => _isProcessing = true);
     try {
       await _admin.auth.admin.updateUserById(userId, attributes: AdminUserAttributes(password: newPass));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Password berhasil diubah!'), backgroundColor: const Color(0xFF10B981), behavior: SnackBarBehavior.floating, margin: const EdgeInsets.all(20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e'), backgroundColor: const Color(0xFFEF4444)));
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e'), backgroundColor: const Color(0xFFEF4444))); }
+    finally { if (mounted) setState(() => _isProcessing = false); }
   }
 
   Future<bool?> _showConfirmDialog({required String title, required String message, required String confirmText, required Color confirmColor, required IconData icon}) {
-    return showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(children: [
-          Container(width: 40, height: 40, decoration: BoxDecoration(color: confirmColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: confirmColor, size: 20)),
-          const SizedBox(width: 12),
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
-        ]),
-        content: Text(message, style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: confirmColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), child: Text(confirmText, style: const TextStyle(color: Colors.white))),
-        ],
-      ),
-    );
+    return showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: confirmColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: confirmColor, size: 20)), const SizedBox(width: 12), Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18))]),
+      content: Text(message, style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
+      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal', style: TextStyle(color: Colors.grey))), ElevatedButton(onPressed: () => Navigator.pop(context, true), style: ElevatedButton.styleFrom(backgroundColor: confirmColor, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), child: Text(confirmText, style: const TextStyle(color: Colors.white)))],
+    ));
   }
 
   @override
@@ -270,6 +160,8 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
     final String domisili = store['domisili'] ?? store['domicile'] ?? '-';
     final int points = (store['points'] as num?)?.toInt() ?? 0;
     final String initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    // [FIX] Deteksi desktop
+    final bool isDesktop = MediaQuery.of(context).size.width >= 800;
 
     Color statusColor; String statusLabel; IconData statusIcon;
     switch (status) {
@@ -296,115 +188,132 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
             ),
             Expanded(
               child: FadeTransition(opacity: _fadeAnim, child: SlideTransition(position: _slideAnim,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-                  child: Column(children: [
-                    // PROFILE CARD
-                    Container(width: double.infinity, padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, 4))]),
-                      child: Column(children: [
-                        Container(width: 64, height: 64, decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFB71C1C), Color(0xFFE53935)]), borderRadius: BorderRadius.circular(18)), child: Center(child: Text(initial, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w700)))),
-                        const SizedBox(height: 12),
-                        Text(name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
-                        const SizedBox(height: 4),
-                        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(statusIcon, color: statusColor, size: 14), const SizedBox(width: 4), Text(statusLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: statusColor))])),
-                        const SizedBox(height: 16),
-                        Container(width: double.infinity, padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xFFF8F8FB), borderRadius: BorderRadius.circular(12)),
-                          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.stars_rounded, color: Color(0xFFF59E0B), size: 20), const SizedBox(width: 8), Text('$points', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)), const SizedBox(width: 4), const Text('Poin', style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)))])),
-                      ])),
-                    const SizedBox(height: 16),
-
-                    // INFO USER
-                    _buildSection('Informasi User', [
-                      _infoRow(Icons.person_outline_rounded, 'Nama PIC', pic),
-                      _infoRow(Icons.location_on_outlined, 'Alamat', address),
-                      _infoRow(Icons.phone_outlined, 'Telepon', phone),
-                      _infoRow(Icons.map_outlined, 'Domisili', domisili),
-                      if (accurateId != null && accurateId.isNotEmpty) _infoRow(Icons.link_rounded, 'Accurate ID', accurateId),
-                    ]),
-                    const SizedBox(height: 16),
-
-                    // KTP
-                    _buildSection('Dokumen KYC', [_infoRow(Icons.badge_outlined, 'No. KTP', ktp)]),
-                    const SizedBox(height: 12),
-
-                    if (ktpImageUrl != null && ktpImageUrl.isNotEmpty)
-                      GestureDetector(onTap: () => _showFullImage(context, ktpImageUrl),
-                        child: Container(width: double.infinity, height: 200, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF0F0F0))),
-                          child: ClipRRect(borderRadius: BorderRadius.circular(16),
-                            child: Stack(fit: StackFit.expand, children: [
-                              Image.network(ktpImageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.broken_image_rounded, size: 32, color: Color(0xFF9CA3AF)), SizedBox(height: 8), Text('Gagal memuat foto', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12))]))),
-                              Positioned(bottom: 8, right: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), borderRadius: BorderRadius.circular(8)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.zoom_in_rounded, color: Colors.white, size: 14), SizedBox(width: 4), Text('Tap untuk perbesar', style: TextStyle(color: Colors.white, fontSize: 11))]))),
-                            ]))))
-                    else
-                      Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 32), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF0F0F0))),
-                        child: const Column(children: [Icon(Icons.image_not_supported_rounded, size: 36, color: Color(0xFFD1D5DB)), SizedBox(height: 8), Text('Foto KTP belum diupload', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13))])),
-
-                    const SizedBox(height: 20),
-
-                    // ADMIN TOOLS
-                    _buildSection('Admin Tools', [
-                      // Set Password Baru (langsung, tanpa opsi email)
-                      GestureDetector(
-                        onTap: _isProcessing ? null : _resetUserPassword,
-                        child: Container(padding: const EdgeInsets.all(14), margin: const EdgeInsets.only(bottom: 10), decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFFDE68A))),
-                          child: Row(children: [
-                            Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.lock_reset_rounded, color: Color(0xFFF59E0B), size: 20)),
-                            const SizedBox(width: 12),
-                            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text('Set Password Baru', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF92400E))),
-                              Text('Admin langsung tentukan password baru user', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
-                            ])),
-                            const Icon(Icons.chevron_right_rounded, color: Color(0xFFF59E0B), size: 20),
-                          ])),
-                      ),
-                      // Hapus User
-                      GestureDetector(
-                        onTap: _isProcessing ? null : _deleteUser,
-                        child: Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFFCA5A5))),
-                          child: Row(children: [
-                            Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFEF4444).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 20)),
-                            const SizedBox(width: 12),
-                            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text('Hapus User Permanen', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFFB91C1C))),
-                              Text('Hapus semua data user ini selamanya', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280))),
-                            ])),
-                            const Icon(Icons.chevron_right_rounded, color: Color(0xFFEF4444), size: 20),
-                          ])),
-                      ),
-                    ]),
-                  ]),
+                // [FIX] Center + maxWidth untuk desktop
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: isDesktop ? 800 : double.infinity),
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                      child: isDesktop ? _buildDesktopLayout(name, pic, address, phone, ktp, status, ktpImageUrl, accurateId, domisili, points, initial, statusColor, statusLabel, statusIcon) : _buildMobileLayout(name, pic, address, phone, ktp, status, ktpImageUrl, accurateId, domisili, points, initial, statusColor, statusLabel, statusIcon),
+                    ),
+                  ),
                 ),
               )),
             ),
           ]),
         ),
-
-        // BOTTOM ACTION BAR
+        // Bottom action bar
         if (status == 'PENDING')
           Positioned(bottom: 0, left: 0, right: 0,
-            child: Container(
-              padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 16),
-              decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, -4))]),
-              child: Row(children: [
-                Expanded(child: SizedBox(height: 50, child: OutlinedButton.icon(
-                  onPressed: _isProcessing ? null : _rejectUser,
-                  icon: const Icon(Icons.close_rounded, size: 18),
-                  label: const Text('Tolak', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                  style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFEF4444), side: const BorderSide(color: Color(0xFFEF4444)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                ))),
-                const SizedBox(width: 12),
-                Expanded(flex: 2, child: SizedBox(height: 50, child: ElevatedButton.icon(
-                  onPressed: _isProcessing ? null : _approveUser,
-                  icon: _isProcessing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_rounded, size: 20),
-                  label: Text(_isProcessing ? 'Memproses...' : 'Approve', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                ))),
-              ]),
-            ),
+            child: Center(child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: isDesktop ? 800 : double.infinity),
+              child: Container(
+                padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 16),
+                decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, -4))]),
+                child: Row(children: [
+                  Expanded(child: SizedBox(height: 50, child: OutlinedButton.icon(onPressed: _isProcessing ? null : _rejectUser, icon: const Icon(Icons.close_rounded, size: 18), label: const Text('Tolak', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)), style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFEF4444), side: const BorderSide(color: Color(0xFFEF4444)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))))),
+                  const SizedBox(width: 12),
+                  Expanded(flex: 2, child: SizedBox(height: 50, child: ElevatedButton.icon(onPressed: _isProcessing ? null : _approveUser, icon: _isProcessing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.check_rounded, size: 20), label: Text(_isProcessing ? 'Memproses...' : 'Approve', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))))),
+                ]),
+              ),
+            )),
           ),
       ]),
     );
+  }
+
+  // [BARU] Desktop layout — 2 kolom
+  Widget _buildDesktopLayout(String name, String pic, String address, String phone, String ktp, String status, String? ktpImageUrl, String? accurateId, String domisili, int points, String initial, Color statusColor, String statusLabel, IconData statusIcon) {
+    return Column(children: [
+      // Profile card
+      _buildProfileCard(name, initial, statusColor, statusLabel, statusIcon, points),
+      const SizedBox(height: 16),
+      // 2-column layout
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Left: Info
+        Expanded(child: Column(children: [
+          _buildSection('Informasi User', [
+            _infoRow(Icons.person_outline_rounded, 'Nama PIC', pic),
+            _infoRow(Icons.location_on_outlined, 'Alamat', address),
+            _infoRow(Icons.phone_outlined, 'Telepon', phone),
+            _infoRow(Icons.map_outlined, 'Domisili', domisili),
+            if (accurateId != null && accurateId.isNotEmpty) _infoRow(Icons.link_rounded, 'Accurate ID', accurateId),
+          ]),
+          const SizedBox(height: 16),
+          _buildSection('Admin Tools', [_buildAdminTools()]),
+        ])),
+        const SizedBox(width: 16),
+        // Right: KTP
+        Expanded(child: Column(children: [
+          _buildSection('Dokumen KYC', [_infoRow(Icons.badge_outlined, 'No. KTP', ktp)]),
+          const SizedBox(height: 12),
+          _buildKtpImage(ktpImageUrl),
+        ])),
+      ]),
+    ]);
+  }
+
+  // Mobile layout — single column (original)
+  Widget _buildMobileLayout(String name, String pic, String address, String phone, String ktp, String status, String? ktpImageUrl, String? accurateId, String domisili, int points, String initial, Color statusColor, String statusLabel, IconData statusIcon) {
+    return Column(children: [
+      _buildProfileCard(name, initial, statusColor, statusLabel, statusIcon, points),
+      const SizedBox(height: 16),
+      _buildSection('Informasi User', [
+        _infoRow(Icons.person_outline_rounded, 'Nama PIC', pic),
+        _infoRow(Icons.location_on_outlined, 'Alamat', address),
+        _infoRow(Icons.phone_outlined, 'Telepon', phone),
+        _infoRow(Icons.map_outlined, 'Domisili', domisili),
+        if (accurateId != null && accurateId.isNotEmpty) _infoRow(Icons.link_rounded, 'Accurate ID', accurateId),
+      ]),
+      const SizedBox(height: 16),
+      _buildSection('Dokumen KYC', [_infoRow(Icons.badge_outlined, 'No. KTP', ktp)]),
+      const SizedBox(height: 12),
+      _buildKtpImage(ktpImageUrl),
+      const SizedBox(height: 20),
+      _buildSection('Admin Tools', [_buildAdminTools()]),
+    ]);
+  }
+
+  Widget _buildProfileCard(String name, String initial, Color statusColor, String statusLabel, IconData statusIcon, int points) {
+    return Container(width: double.infinity, padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, 4))]),
+      child: Column(children: [
+        Container(width: 64, height: 64, decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFB71C1C), Color(0xFFE53935)]), borderRadius: BorderRadius.circular(18)), child: Center(child: Text(initial, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w700)))),
+        const SizedBox(height: 12),
+        Text(name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+        const SizedBox(height: 4),
+        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(statusIcon, color: statusColor, size: 14), const SizedBox(width: 4), Text(statusLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: statusColor))])),
+        const SizedBox(height: 16),
+        Container(width: double.infinity, padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xFFF8F8FB), borderRadius: BorderRadius.circular(12)),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Icon(Icons.stars_rounded, color: Color(0xFFF59E0B), size: 20), const SizedBox(width: 8), Text('$points', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)), const SizedBox(width: 4), const Text('Poin', style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)))])),
+      ]));
+  }
+
+  Widget _buildAdminTools() {
+    return Column(children: [
+      GestureDetector(onTap: _isProcessing ? null : _resetUserPassword,
+        child: Container(padding: const EdgeInsets.all(14), margin: const EdgeInsets.only(bottom: 10), decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFFDE68A))),
+          child: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.lock_reset_rounded, color: Color(0xFFF59E0B), size: 20)), const SizedBox(width: 12),
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Set Password Baru', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF92400E))), Text('Admin langsung tentukan password baru user', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280)))])), const Icon(Icons.chevron_right_rounded, color: Color(0xFFF59E0B), size: 20)]))),
+      GestureDetector(onTap: _isProcessing ? null : _deleteUser,
+        child: Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFFCA5A5))),
+          child: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFEF4444).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 20)), const SizedBox(width: 12),
+            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Hapus User Permanen', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFFB91C1C))), Text('Hapus semua data user ini selamanya', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280)))])), const Icon(Icons.chevron_right_rounded, color: Color(0xFFEF4444), size: 20)]))),
+    ]);
+  }
+
+  Widget _buildKtpImage(String? ktpImageUrl) {
+    if (ktpImageUrl != null && ktpImageUrl.isNotEmpty) {
+      return GestureDetector(onTap: () => _showFullImage(context, ktpImageUrl),
+        child: Container(width: double.infinity, height: 200, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF0F0F0))),
+          child: ClipRRect(borderRadius: BorderRadius.circular(16),
+            child: Stack(fit: StackFit.expand, children: [
+              Image.network(ktpImageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.broken_image_rounded, size: 32, color: Color(0xFF9CA3AF)), SizedBox(height: 8), Text('Gagal memuat foto', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12))]))),
+              Positioned(bottom: 8, right: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), borderRadius: BorderRadius.circular(8)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.zoom_in_rounded, color: Colors.white, size: 14), SizedBox(width: 4), Text('Tap untuk perbesar', style: TextStyle(color: Colors.white, fontSize: 11))]))),
+            ]))));
+    }
+    return Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 32), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF0F0F0))),
+      child: const Column(children: [Icon(Icons.image_not_supported_rounded, size: 36, color: Color(0xFFD1D5DB)), SizedBox(height: 8), Text('Foto KTP belum diupload', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13))]));
   }
 
   Widget _buildSection(String title, List<Widget> children) {
@@ -428,7 +337,6 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
 class _FullImageView extends StatelessWidget {
   final String url;
   const _FullImageView({required this.url});
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(backgroundColor: Colors.black87,
@@ -438,18 +346,14 @@ class _FullImageView extends StatelessWidget {
 }
 
 class _SuccessDialog extends StatefulWidget {
-  final bool isApproved;
-  final String userName;
+  final bool isApproved; final String userName;
   const _SuccessDialog({required this.isApproved, required this.userName});
-
   @override
   State<_SuccessDialog> createState() => _SuccessDialogState();
 }
 
 class _SuccessDialogState extends State<_SuccessDialog> with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _scale;
-
+  late AnimationController _ctrl; late Animation<double> _scale;
   @override
   void initState() {
     super.initState();
@@ -458,10 +362,8 @@ class _SuccessDialogState extends State<_SuccessDialog> with SingleTickerProvide
     _ctrl.forward();
     Future.delayed(const Duration(seconds: 2), () { if (mounted) Navigator.pop(context); });
   }
-
   @override
   void dispose() { _ctrl.dispose(); super.dispose(); }
-
   @override
   Widget build(BuildContext context) {
     final color = widget.isApproved ? const Color(0xFF10B981) : const Color(0xFFEF4444);
@@ -470,12 +372,6 @@ class _SuccessDialogState extends State<_SuccessDialog> with SingleTickerProvide
     return Center(child: ScaleTransition(scale: _scale, child: Container(
       margin: const EdgeInsets.all(40), padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 30, offset: const Offset(0, 10))]),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 64, height: 64, decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: color, size: 36)),
-        const SizedBox(height: 16),
-        Text(text, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: color)),
-        const SizedBox(height: 8),
-        Text(widget.userName, style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280)), textAlign: TextAlign.center),
-      ]))));
+      child: Column(mainAxisSize: MainAxisSize.min, children: [Container(width: 64, height: 64, decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: color, size: 36)), const SizedBox(height: 16), Text(text, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: color)), const SizedBox(height: 8), Text(widget.userName, style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280)), textAlign: TextAlign.center)]))));
   }
 }
