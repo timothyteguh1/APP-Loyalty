@@ -19,7 +19,10 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
   @override
   void initState() {
     super.initState();
-    _fetchRewards();
+    // [PERBAIKAN] Beri jeda render
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchRewards();
+    });
   }
 
   Future<void> _fetchRewards() async {
@@ -28,6 +31,8 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
       final data = await _admin.from('rewards').select().order('created_at', ascending: false);
       if (mounted) setState(() { _rewards = List<Map<String, dynamic>>.from(data); _isLoading = false; });
     } catch (e) {
+      // [PERBAIKAN] Print error ke log
+      debugPrint("ERROR FETCH REWARDS: $e");
       if (mounted) setState(() => _isLoading = false);
     }
   }

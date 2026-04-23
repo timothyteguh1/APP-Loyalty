@@ -21,28 +21,50 @@ class AuthController {
     required String storeAddress,
     required String domisili,
     required String ktpNumber,
-    String? accurateCustomerId, // [NEW] Parameter Kode Pelanggan
+    String? accurateCustomerId, 
     Uint8List? ktpImageBytes,
     String? ktpFileName,
   }) async {
     try {
-      // [PENTING] Mencegah string kosong masuk dan menabrak Unique Constraint di Database
       final validAccurateId = (accurateCustomerId != null && accurateCustomerId.trim().isNotEmpty) 
           ? accurateCustomerId.trim() 
           : null;
 
+      // [PERBAIKAN] Upload KTP terlebih dahulu sebelum sign up
+      String? ktpImageUrl;
+      if (ktpImageBytes != null && ktpFileName != null) {
+        final ext = ktpFileName.split('.').last;
+        final fileName = 'ktp_new_${DateTime.now().millisecondsSinceEpoch}.$ext';
+        try {
+          await _supabase.storage.from('upsol-assets').uploadBinary(
+                fileName, ktpImageBytes,
+                fileOptions: const FileOptions(upsert: true),
+              );
+          ktpImageUrl = _supabase.storage.from('upsol-assets').getPublicUrl(fileName);
+        } catch (e) {
+          throw 'Gagal mengunggah KTP: $e (Pastikan Storage Bucket mengizinkan Anon Insert)';
+        }
+      }
+
+      // [PERBAIKAN] Gabungkan semua data, termasuk KTP URL ke metadata
+      final Map<String, dynamic> metadata = {
+        'full_name': fullName,
+        'pic_name': picName,
+        'phone': phone,
+        'store_address': storeAddress,
+        'domisili': domisili,
+        'ktp_number': ktpNumber,
+        'accurate_customer_id': validAccurateId,
+      };
+      
+      if (ktpImageUrl != null) {
+        metadata['ktp_image_url'] = ktpImageUrl;
+      }
+
       final AuthResponse res = await _supabase.auth.signUp(
         email: email,
         password: password,
-        data: {
-          'full_name': fullName,
-          'pic_name': picName,
-          'phone': phone,
-          'store_address': storeAddress,
-          'domisili': domisili,
-          'ktp_number': ktpNumber,
-          'accurate_customer_id': validAccurateId, // [NEW] Simpan ke metadata
-        },
+        data: metadata, // Data otomatis masuk tabel profile via trigger
       );
 
       if (res.user == null) {
@@ -51,36 +73,6 @@ class AuthController {
 
       final String userId = res.user!.id;
       final bool needsEmailVerification = (res.session == null);
-
-      String? ktpImageUrl;
-      if (ktpImageBytes != null && ktpFileName != null) {
-        final ext = ktpFileName.split('.').last;
-        final fileName = 'ktp_${userId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
-        try {
-          await _supabase.storage.from('upsol-assets').uploadBinary(
-                fileName, ktpImageBytes,
-                fileOptions: const FileOptions(upsert: true),
-              );
-          ktpImageUrl = _supabase.storage.from('upsol-assets').getPublicUrl(fileName);
-        } catch (e) {
-          debugPrint('KTP upload note: $e');
-        }
-      }
-
-      // Pastikan data profil terupdate dengan KTP URL (jika ada) dan accurate_customer_id
-      try {
-        final updateData = <String, dynamic>{
-          'updated_at': DateTime.now().toIso8601String(),
-        };
-        if (ktpImageUrl != null) updateData['ktp_image_url'] = ktpImageUrl;
-        if (validAccurateId != null) updateData['accurate_customer_id'] = validAccurateId; // [NEW] Fallback Update
-
-        if (updateData.length > 1) { // Hanya update jika ada KTP atau Accurate ID
-          await _supabase.from('profiles').update(updateData).eq('id', userId);
-        }
-      } catch (e) {
-        debugPrint('Profile update note: $e');
-      }
 
       // ======= EMAIL NOTIFIKASI: Notify Admin tentang pendaftaran baru =======
       try {

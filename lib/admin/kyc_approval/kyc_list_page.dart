@@ -25,7 +25,10 @@ class _KycListPageState extends State<KycListPage> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _fetchProfiles();
+    // [PERBAIKAN] Beri jeda render
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchProfiles();
+    });
   }
 
   @override
@@ -51,6 +54,8 @@ class _KycListPageState extends State<KycListPage> with SingleTickerProviderStat
         });
       }
     } catch (e) {
+      // [PERBAIKAN] Print error ke log
+      debugPrint("ERROR FETCH KYC: $e");
       if (mounted) setState(() => _isLoading = false);
     }
   }

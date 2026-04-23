@@ -234,7 +234,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                               FadeTransition(
                                 opacity: _titleFade,
                                 child: Column(children: [
-                                  const Text('Upsol Loyalty', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.5)),
+                                  const Text('BKA Loyalty', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.5)),
                                   const SizedBox(height: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -367,7 +367,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                 ),
                               ),
                               const SizedBox(height: 24),
-                              FadeTransition(opacity: _cardFade, child: Text('Upsol Loyalty v2.0', style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.3)))),
+                              FadeTransition(opacity: _cardFade, child: Text('BKA Loyalty v2.0', style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.3)))),
                               const SizedBox(height: 20),
                             ],
                           ),

@@ -24,7 +24,10 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
   void initState() {
     super.initState();
     _masterCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
-    _fetchAll();
+    // [PERBAIKAN] Beri jeda render
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _fetchAll();
+    });
   }
 
   @override
@@ -55,6 +58,8 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
         _masterCtrl.forward();
       }
     } catch (e) {
+      // [PERBAIKAN] Print error ke log
+      debugPrint("ERROR FETCH ADMIN HOME: $e"); 
       if (mounted) {
         setState(() => _isLoading = false);
         _masterCtrl.forward();

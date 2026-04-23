@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "App Loyalty (Toko)",
+      "name": "App User",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart"

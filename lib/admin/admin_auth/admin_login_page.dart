@@ -138,7 +138,7 @@ Future<void> _handleLogin() async {
                     const SizedBox(height: 24),
 
                     FadeTransition(opacity: _titleFade, child: Column(children: [
-                      const Text('Upsol Admin', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.5)),
+                      const Text('BKA Admin', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.5)),
                       const SizedBox(height: 8),
                       Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.1))), child: const Text('Loyalty Management Panel', style: TextStyle(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.w500, letterSpacing: 0.5))),
                     ])),
@@ -174,7 +174,7 @@ Future<void> _handleLogin() async {
                     FadeTransition(opacity: _cardFade, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       Container(width: 6, height: 6, decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), shape: BoxShape.circle)),
                       const SizedBox(width: 8),
-                      Text('Upsol Loyalty v2.0', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.4), fontWeight: FontWeight.w500)),
+                      Text('BKA Loyalty v2.0', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.4), fontWeight: FontWeight.w500)),
                       const SizedBox(width: 8),
                       Container(width: 6, height: 6, decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), shape: BoxShape.circle)),
                     ])),

@@ -51,7 +51,7 @@ class _RewardPageState extends State<RewardPage> {
           .eq('is_best_deal', true)
           .gt('stock', 0)
           .order('points_required', ascending: true)
-          .limit(1);
+          .limit(3);
 
       if (mounted) {
         setState(() { _bestDeals = List<Map<String, dynamic>>.from(data); _isLoadingDeals = false; });
@@ -145,7 +145,7 @@ class _RewardPageState extends State<RewardPage> {
           ),
           const SizedBox(height: 30),
 
-          // Best Deal
+         // Best Deal
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -155,7 +155,15 @@ class _RewardPageState extends State<RewardPage> {
                   ? Container(width: double.infinity, padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), child: const Center(child: CircularProgressIndicator(color: Color(0xFFD32F2F))))
                   : _bestDeals.isEmpty
                       ? Container(width: double.infinity, padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), child: const Text("Nantikan promo menarik segera!", style: TextStyle(color: Colors.grey)))
-                      : _dealCard(_bestDeals[0]),
+                      // [REVISI] Melakukan "looping" ke semua data yang didapat dari database
+                      : Column(
+                          children: _bestDeals.map((item) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12), // Jarak antar card
+                              child: _dealCard(item),
+                            );
+                          }).toList(),
+                        ),
             ]),
           ),
         ]),
@@ -163,28 +171,49 @@ class _RewardPageState extends State<RewardPage> {
     );
   }
 
-  // [REVISI] Tampilkan NAMA hadiah, bukan deskripsi
+  // [REVISI] Fokus Best Deal: Tampilkan dinamis dan ganti nama menjadi Bintang Kemenangan Abadi
   Widget _dealCard(Map<String, dynamic> item) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 15, offset: const Offset(0, 5))]),
+      decoration: BoxDecoration(
+        color: Colors.white, // Ganti jadi Color(0xFF1E1E1E) jika nanti jadi pakai tema gelap
+        borderRadius: BorderRadius.circular(20), 
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 15, offset: const Offset(0, 5))]
+      ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Image.asset('assets/images/logo.png', height: 20, errorBuilder: (c, e, s) => const Icon(Icons.local_offer, color: Colors.red, size: 20)),
           const SizedBox(width: 8),
-          const Text("UPSOL OFFICIAL", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+          
+          // [REVISI 1] Mengganti tulisan statis UPSOL OFFICIAL
+          const Text("BINTANG KEMENANGAN ABADI", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+          
+          const Spacer(),
+          
+          // [TAMBAHAN] Menampilkan tag "Voucher" atau "Produk" secara dinamis
+          if (item['type'] != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: item['type'] == 'VOUCHER' ? Colors.blue.withOpacity(0.1) : Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+              child: Text(item['type'] == 'VOUCHER' ? 'Voucher' : 'Produk', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: item['type'] == 'VOUCHER' ? Colors.blue : Colors.green)),
+            ),
         ]),
         const SizedBox(height: 12),
-        Text(item['name'] ?? '-', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, height: 1.3), maxLines: 2, overflow: TextOverflow.ellipsis),
+        
+        // [REVISI 2] Memastikan Nama Promo / Item yang tampil adalah yang dipilih di database
+        Text(item['name'] ?? 'Promo Spesial', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, height: 1.3), maxLines: 2, overflow: TextOverflow.ellipsis),
+        
         if (item['description'] != null && item['description'].toString().isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(item['description'], style: TextStyle(fontSize: 12, color: Colors.grey[600]), maxLines: 1, overflow: TextOverflow.ellipsis),
         ],
         const SizedBox(height: 20), const Divider(height: 1), const SizedBox(height: 16),
+        
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Row(children: [
             Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: Colors.amber[50], shape: BoxShape.circle), child: const Icon(Icons.stars, color: Colors.amber, size: 18)),
             const SizedBox(width: 8),
+            // Menampilkan harga poin secara dinamis
             Text("${item['points_required'] ?? 0}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
           ]),
           ElevatedButton(

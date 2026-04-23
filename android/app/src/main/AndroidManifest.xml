@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.CAMERA"/>
     
     <application
-        android:label="Upsol Loyalty"
+        android:label="Bintang Kemenangan Abadi"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

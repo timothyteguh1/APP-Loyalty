@@ -24,7 +24,7 @@ class UpsolAdminApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Upsol Admin',
+      title: 'Admin Bintang Kemenangan Abadi',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         fontFamily: 'Inter',
@@ -184,7 +184,7 @@ class _AdminMainPageState extends State<AdminMainPage> {
             Container(width: 40, height: 40, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)), child: const Center(child: Text('U', style: TextStyle(color: Color(0xFFB71C1C), fontWeight: FontWeight.w900, fontSize: 20)))),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Upsol Admin', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+              const Text('Admin BKA', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
               Text(adminName, style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
             ])),
           ]),
@@ -267,7 +267,7 @@ class _AdminMainPageState extends State<AdminMainPage> {
       child: Column(children: [
         UserAccountsDrawerHeader(
           decoration: const BoxDecoration(color: Color(0xFFB71C1C)),
-          accountName: const Text("Upsol Admin Panel", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          accountName: const Text("BKA Admin Panel", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           accountEmail: Text(adminName, style: const TextStyle(color: Colors.white70)),
           currentAccountPicture: Container(
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),

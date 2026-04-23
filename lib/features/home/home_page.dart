@@ -219,7 +219,7 @@ class _HomePageState extends State<HomePage> {
                 Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                   Builder(builder: (context) {
                     final user = _supabase.auth.currentUser;
-                    final name = user?.userMetadata?['full_name'] ?? 'User Upsol';
+                    final name = user?.userMetadata?['full_name'] ?? 'User BKA';
                     return Text("Selamat datang, $name", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500));
                   }),
                   if (!LayoutState().isDesktopMode.value)
@@ -245,7 +245,7 @@ class _HomePageState extends State<HomePage> {
                 child: Column(children: [
                   Builder(builder: (context) {
                     final user = _supabase.auth.currentUser;
-                    final name = user?.userMetadata?['full_name'] ?? 'User Upsol';
+                    final name = user?.userMetadata?['full_name'] ?? 'User BKA';
                     final email = user?.email ?? '-';
                     final String? avatarUrl = user?.userMetadata?['avatar_url'];
                     final bool hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
@@ -267,7 +267,7 @@ class _HomePageState extends State<HomePage> {
                   // [REVISI] Hanya tampilkan poin, tanpa tombol Redeem
                   Row(children: [
                     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text("Poin anda saat ini", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                      Text("Poin anda saat ini", style: TextStyle(color: Colors.grey[600], fontSize: 18)),
                       const SizedBox(height: 4),
                       _pointsStream != null
                           ? StreamBuilder<List<Map<String, dynamic>>>(
@@ -342,7 +342,7 @@ class _HomePageState extends State<HomePage> {
           Row(children: [
             Image.asset('assets/images/logo.png', height: 20, errorBuilder: (c, e, s) => const Icon(Icons.local_offer, color: Colors.red, size: 20)),
             const SizedBox(width: 8),
-            const Text("UPSOL OFFICIAL", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+            const Text("BINTANG KEMENANGAN ABADI", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
             const Spacer(),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
