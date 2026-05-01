@@ -24,7 +24,7 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
   SyncResult? _lastSyncResult;
   String _syncProgress = '';
 
-  static const String _knownDbId = 'a4512d3a-0595-4bf9-bc6f-9d89016f0ffc';
+  static const String _knownDbId = '2570323';
 
   @override
   void initState() {
