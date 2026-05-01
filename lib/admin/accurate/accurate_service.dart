@@ -123,7 +123,7 @@ class AccurateService {
   }
 
   // ============================================================
-  // FAKTUR PENJUALAN - LIST
+  // FAKTUR PENJUALAN
   // ============================================================
   static Future<Map<String, dynamic>> fetchSalesInvoices(
     String host, String session, String token, { int? customerId, int page = 1, int pageSize = 50,
@@ -152,9 +152,6 @@ class AccurateService {
     return data;
   }
 
-  // ============================================================
-  // FAKTUR PENJUALAN - DETAIL
-  // ============================================================
   static Future<Map<String, dynamic>> fetchInvoiceDetail(
     String host, String session, String token, int invoiceId,
   ) async {
@@ -205,6 +202,24 @@ class AccurateService {
     return data;
   }
 
+  // FUNGSI BARU: AMBIL DETAIL RETUR
+  static Future<Map<String, dynamic>> fetchReturnDetail(
+    String host, String session, String token, int returnId,
+  ) async {
+    final url = '$host/accurate/api/sales-return/detail.do?id=$returnId';
+    
+    final data = await _proxy(accurateUrl: url, headers: {
+      'X-Session-ID': session,
+      'Authorization': 'Bearer $token'
+    });
+
+    if (data['s'] == false) {
+      if (data['d']?.toString().contains('session') == true) throw 'SESSION_EXPIRED';
+      throw data['d']?.toString() ?? 'Gagal ambil detail retur';
+    }
+    return data;
+  }
+
   Future<List<Map<String, dynamic>>> getAccurateCustomers() async {
     try {
       final config = await _supabase.from('app_config').select().inFilter('key', ['accurate_db_host', 'accurate_access_token', 'accurate_db_session']);
@@ -226,9 +241,6 @@ class AccurateService {
     } catch (e) { rethrow; }
   }
 
-  // ============================================================
-  // HELPER: Cek apakah faktur LUNAS dari data detail
-  // ============================================================
   static bool _isInvoiceFullyPaid(Map<String, dynamic> detail) {
     final String statusName = (detail['statusName'] ?? '').toString();
     final String status = (detail['status'] ?? '').toString().toUpperCase();
@@ -265,9 +277,6 @@ class AccurateService {
     return false;
   }
 
-  // ============================================================
-  // HELPER: Ambil tanggal bayar/close dari detail faktur
-  // ============================================================
   static DateTime? _getPaymentDate(Map<String, dynamic> detail) {
     final candidates = [
       detail['lastPaymentDate'],
@@ -280,15 +289,10 @@ class AccurateService {
       if (raw == null) continue;
       final str = raw.toString().trim();
       if (str.isEmpty) continue;
-      
       try {
-        if (str.contains('/')) {
-          return DateTime.parse(_parseAccurateDate(str));
-        }
+        if (str.contains('/')) return DateTime.parse(_parseAccurateDate(str));
         return DateTime.parse(str);
-      } catch (_) {
-        continue;
-      }
+      } catch (_) { continue; }
     }
 
     final receiptHistory = detail['receiptHistory'];
@@ -297,20 +301,14 @@ class AccurateService {
       final historyDate = lastReceipt['historyDate']?.toString().trim() ?? '';
       if (historyDate.isNotEmpty) {
         try {
-          if (historyDate.contains('/')) {
-            return DateTime.parse(_parseAccurateDate(historyDate));
-          }
+          if (historyDate.contains('/')) return DateTime.parse(_parseAccurateDate(historyDate));
           return DateTime.parse(historyDate);
         } catch (_) {}
       }
     }
-
     return null;
   }
 
-  // ============================================================
-  // FUNGSI INTI: SYNC FAKTUR & RETUR
-  // ============================================================
   static Future<SyncResult> syncInvoicesToPoints({
     required SupabaseClient admin,
     required String host,
@@ -324,19 +322,20 @@ class AccurateService {
 
     try {
       onProgress?.call('Mencari data user...');
-      print('=== MULAI SYNC ===');
+      print('\n=== MULAI SYNC ===\n');
 
       final tokenConfig = await admin.from('app_config').select('value').eq('key', 'accurate_access_token').maybeSingle();
       final String token = tokenConfig?['value']?.toString() ?? '';
 
-      if (token.isEmpty) throw 'Token Authorization tidak ditemukan di sistem. Silakan login Accurate ulang.';
+      if (token.isEmpty) throw 'Token Authorization tidak ditemukan di sistem.';
       
       final users = await admin.from('profiles').select('id, full_name, points, accurate_customer_id, point_conversion_rate')
           .eq('approval_status', 'APPROVED').not('accurate_customer_id', 'is', null).neq('accurate_customer_id', '');
 
+      print('=> Ditemukan ${users.length} toko/user yang valid di database untuk disync.');
+
       if (users.isEmpty) {
-        print('INFO: Tidak ada user yang di-approve & punya Accurate ID');
-        return SyncResult(message: 'Tidak ada user dengan Accurate Customer ID.', totalInvoicesChecked: 0, totalPointsAdded: 0, totalUsersAffected: 0, totalSkipped: 0);
+        return SyncResult(message: 'Tidak ada user valid.', totalInvoicesChecked: 0, totalPointsAdded: 0, totalUsersAffected: 0, totalSkipped: 0);
       }
 
       final globalConfig = await admin.from('app_config').select('value').eq('key', 'default_conversion_rate').maybeSingle();
@@ -349,11 +348,25 @@ class AccurateService {
         final int conversionRate = (user['point_conversion_rate'] as num?)?.toInt() ?? globalRate;
         final int currentPoints = (user['points'] as num?)?.toInt() ?? 0;
 
-        print('\nMemeriksa Toko: $userName (ID: $accurateCustomerId)');
+        print('\n=== Memeriksa Toko: $userName (ID: $accurateCustomerId) ===');
         onProgress?.call('Sync Toko: $userName...');
 
         try {
           int userPointsGained = 0; 
+
+          final existingHistory = await admin.from('point_history')
+              .select('reference_id, reference_type')
+              .eq('user_id', userId);
+              
+          final Set<String> claimedInvoices = {};
+          final Set<String> claimedReturns = {};
+          
+          for (var history in existingHistory) {
+            final type = history['reference_type'];
+            final refId = history['reference_id']?.toString() ?? '';
+            if (type == 'INVOICE') claimedInvoices.add(refId);
+            if (type == 'RETURN') claimedReturns.add(refId);
+          }
           
           // =============================================
           // 1. PROSES FAKTUR PENJUALAN
@@ -364,104 +377,98 @@ class AccurateService {
             final List<dynamic> invoices = result['d'] ?? [];
             final int totalCount = (result['totalCount'] as num?)?.toInt() ?? invoices.length;
 
-            for (final invoice in invoices) {
-              totalInvoicesChecked++;
-              final int invoiceId = (invoice['id'] as num?)?.toInt() ?? 0;
-              final String invoiceNumber = invoice['number']?.toString() ?? '';
+            if (invoices.isEmpty) {
+              print('  -> (Tidak ada data faktur Penjualan di Accurate untuk $userName)');
+            }
 
-              if (invoiceNumber.isEmpty || invoiceId <= 0) { 
-                print('  -> [SKIP] Faktur $invoiceNumber: Data kosong atau ID 0.');
+            for (final invoice in invoices) {
+              final String invoiceNumber = invoice['number']?.toString() ?? '';
+              final int invoiceId = (invoice['id'] as num?)?.toInt() ?? 0;
+
+              if (invoiceNumber.isEmpty) continue;
+
+              if (claimedInvoices.contains(invoiceNumber)) {
+                print('  -> [SUDAH KLAIM] Faktur $invoiceNumber sudah pernah ditukar poin. Melewati...');
+                continue; 
+              }
+
+              totalInvoicesChecked++;
+
+              if (invoiceId <= 0) { 
                 totalSkipped++; continue; 
               }
 
-              // [GEMBOK 1] Cek List (Kalau API Accurate kasih ID di list)
               final String listCustId = invoice['customer']?['id']?.toString() ?? invoice['customer.id']?.toString() ?? '';
               if (listCustId.isNotEmpty && listCustId != accurateCustomerId) {
-                print('  -> [SKIP] Faktur $invoiceNumber nyasar di list (Milik ID $listCustId)');
                 totalSkipped++; continue;
               }
 
-              // --- Anti-double: Sudah pernah disync? ---
-              final existing = await admin.from('point_history').select('id').eq('reference_type', 'INVOICE').eq('reference_id', invoiceNumber).maybeSingle();
-              if (existing != null) { 
-                print('  -> [SKIP] Faktur $invoiceNumber: Sudah pernah diklaim.');
-                totalSkipped++; continue; 
-              }
-
-              // --- AMBIL DETAIL FAKTUR ---
-              onProgress?.call('Detail faktur $invoiceNumber...');
+              onProgress?.call('Cek detail $invoiceNumber...');
               
               Map<String, dynamic> detailData;
               try {
                 final detailResponse = await fetchInvoiceDetail(host, session, token, invoiceId);
                 detailData = (detailResponse['d'] is Map) ? Map<String, dynamic>.from(detailResponse['d']) : {};
               } catch (e) {
-                print('  -> [ERROR] Gagal ambil detail $invoiceNumber: $e');
-                errors.add('Faktur $invoiceNumber: Gagal ambil detail ($e)');
+                errors.add('Faktur $invoiceNumber: Gagal ambil detail');
                 totalSkipped++; continue;
               }
 
-              // [GEMBOK 2 MUTLAK] Validasi ID dari Detail Faktur
+              // [GEMBOK 2 MUTLAK INVOICE] 
               final String detailCustId = detailData['customer']?['id']?.toString() ?? '';
-              if (detailCustId.isNotEmpty && detailCustId != accurateCustomerId) {
-                print('  -> [SKIP MUTLAK] Faktur $invoiceNumber aslinya milik ID $detailCustId, bukan $accurateCustomerId! DITOLAK!');
+              if (detailCustId != accurateCustomerId) {
+                print('  -> [SKIP MUTLAK] Faktur $invoiceNumber aslinya milik ID $detailCustId, bukan milik $userName! DITOLAK!');
                 totalSkipped++; 
                 continue;
               }
 
-              // --- CEK 1: Apakah LUNAS? ---
-              final bool isFullyPaid = _isInvoiceFullyPaid(detailData);
-              final String statusDebug = detailData['statusName']?.toString() ?? detailData['status']?.toString() ?? 'UNKNOWN';
-              
-              if (!isFullyPaid) {
-                print('  -> [SKIP] Faktur $invoiceNumber: BELUM LUNAS (status: $statusDebug)');
+              if (!_isInvoiceFullyPaid(detailData)) {
+                print('  -> [SKIP] Faktur $invoiceNumber: BELUM LUNAS. Lompat ke faktur berikutnya...');
                 totalSkipped++; continue;
               }
 
-              // --- CEK 2: Apakah bayar SEBELUM jatuh tempo? ---
               final String dueDateStr = detailData['dueDate']?.toString() ?? invoice['dueDate']?.toString() ?? '';
               if (dueDateStr.isNotEmpty) {
                 final DateTime dueDate = DateTime.parse(_parseAccurateDate(dueDateStr));
                 DateTime? paymentDate = _getPaymentDate(detailData);
                 
                 if (paymentDate != null) {
-                  if (paymentDate.isAfter(dueDate)) {
-                    print('  -> [SKIP] Faktur $invoiceNumber: TELAT BAYAR (tempo: $dueDate)');
-                    totalSkipped++; continue;
+                  if (paymentDate.isAfter(dueDate)) { 
+                    print('  -> [SKIP] Faktur $invoiceNumber: TELAT BAYAR. Lompat ke faktur berikutnya...');
+                    totalSkipped++; continue; 
                   }
                 } else {
-                  if (DateTime.now().isAfter(dueDate)) {
-                    print('  -> [SKIP] Faktur $invoiceNumber: Melewati jatuh tempo, tgl bayar tidak jelas.');
-                    totalSkipped++; continue;
+                  if (DateTime.now().isAfter(dueDate)) { 
+                    print('  -> [SKIP] Faktur $invoiceNumber: Melewati jatuh tempo. Lompat ke faktur berikutnya...');
+                    totalSkipped++; continue; 
                   }
                 }
               }
 
-              // --- HITUNG POIN (DIPERBAIKI) ---
               final double nominalFaktur = (detailData['grandTotal'] as num?)?.toDouble() 
                   ?? (detailData['totalAmount'] as num?)?.toDouble() 
                   ?? (invoice['grandTotal'] as num?)?.toDouble() 
                   ?? (invoice['totalAmount'] as num?)?.toDouble() ?? 0;
 
-              if (nominalFaktur <= 0) { 
-                print('  -> [SKIP] Faktur $invoiceNumber: Nominal 0 (totalAmount tidak terbaca).');
-                totalSkipped++; continue; 
-              }
+              if (nominalFaktur <= 0) { totalSkipped++; continue; }
 
               final int pointsEarned = (nominalFaktur / conversionRate).floor();
               if (pointsEarned <= 0) { totalSkipped++; continue; }
 
-              // --- SIMPAN POIN ---
               await admin.from('point_history').insert({
                 'user_id': userId, 'amount': pointsEarned, 'description': 'Faktur Lunas #$invoiceNumber',
                 'reference_type': 'INVOICE', 'reference_id': invoiceNumber, 'created_at': DateTime.now().toIso8601String(),
               });
+              
               userPointsGained += pointsEarned;
               totalPointsAdded += pointsEarned;
-              print('  -> [SUCCESS] Faktur $invoiceNumber: +$pointsEarned Poin (nominal: $nominalFaktur, rate: $conversionRate)');
+              print('  -> [BERHASIL FAKTUR] $invoiceNumber dapet +$pointsEarned Poin');
             }
+            
             hasMore = (page * 50) < totalCount; page++; if (page > 10) hasMore = false;
           }
+          
+          print('  => Selesai mengecek semua faktur Penjualan untuk $userName.');
 
           // =============================================
           // 2. PROSES RETUR PENJUALAN
@@ -472,44 +479,97 @@ class AccurateService {
             final List<dynamic> returns = resultRetur['d'] ?? [];
             final int totalCountRetur = (resultRetur['totalCount'] as num?)?.toInt() ?? returns.length;
 
-            for (final ret in returns) {
-              totalReturnsChecked++;
-              final String returnNumber = ret['number']?.toString() ?? '';
-              final double nominalRetur = (ret['totalAmount'] as num?)?.toDouble() ?? (ret['grandTotal'] as num?)?.toDouble() ?? 0;
+            if (returns.isEmpty) {
+              print('  -> (Tidak ada data retur Penjualan di Accurate untuk $userName)');
+            }
 
-              // [GEMBOK RETUR] Validasi ID Customer
-              final String returnCustomerId = ret['customer']?['id']?.toString() ?? ret['customer.id']?.toString() ?? '';
-              if (returnCustomerId.isNotEmpty && returnCustomerId != accurateCustomerId) {
+            for (final ret in returns) {
+              final String returnNumber = ret['number']?.toString() ?? '';
+              final int returnId = (ret['id'] as num?)?.toInt() ?? 0;
+              
+              if (returnNumber.isEmpty || returnId <= 0) continue;
+
+              if (claimedReturns.contains(returnNumber)) {
+                print('  -> [SUDAH KLAIM] Retur $returnNumber sudah pernah dipotong poinnya. Melewati...');
                 continue;
               }
 
-              if (returnNumber.isEmpty || nominalRetur <= 0) continue;
+              totalReturnsChecked++;
 
-              final existingRetur = await admin.from('point_history').select('id').eq('reference_type', 'RETURN').eq('reference_id', returnNumber).maybeSingle();
-              if (existingRetur != null) continue;
+              // [GEMBOK 1 LIST RETUR]
+              final String listReturnCustId = ret['customer']?['id']?.toString() ?? ret['customer.id']?.toString() ?? '';
+              if (listReturnCustId.isNotEmpty && listReturnCustId != accurateCustomerId) {
+                continue; // Skip diam-diam biar gak menuhin log kalo ada dari list
+              }
+
+              onProgress?.call('Cek detail retur $returnNumber...');
+
+              // --- AMBIL DETAIL RETUR ---
+              Map<String, dynamic> returDetail;
+              try {
+                final resDetailRetur = await fetchReturnDetail(host, session, token, returnId);
+                returDetail = (resDetailRetur['d'] is Map) ? Map<String, dynamic>.from(resDetailRetur['d']) : {};
+              } catch (e) {
+                print('  -> [ERROR] Gagal ambil detail retur $returnNumber');
+                continue;
+              }
+
+              // [GEMBOK 2 MUTLAK RETUR] Validasi ketat ID Customer dari Detail
+              final String exactReturnCustId = returDetail['customer']?['id']?.toString() ?? '';
+              if (exactReturnCustId != accurateCustomerId) {
+                print('  -> [SKIP RETUR MUTLAK] Retur $returnNumber aslinya milik ID $exactReturnCustId, bukan milik $userName! DITOLAK!');
+                continue;
+              }
+
+              final double nominalRetur = (returDetail['grandTotal'] as num?)?.toDouble() 
+                  ?? (returDetail['totalAmount'] as num?)?.toDouble() 
+                  ?? (ret['grandTotal'] as num?)?.toDouble() 
+                  ?? (ret['totalAmount'] as num?)?.toDouble() ?? 0;
+
+              if (nominalRetur <= 0) {
+                 print('  -> [SKIP RETUR] Retur $returnNumber nominalnya 0. Melewati...');
+                 continue;
+              }
 
               final int pointsDeducted = (nominalRetur / conversionRate).floor();
-              if (pointsDeducted <= 0) continue;
+              if (pointsDeducted <= 0) {
+                 print('  -> [SKIP RETUR] Retur $returnNumber hasil potong poin 0. Melewati...');
+                 continue;
+              }
 
               await admin.from('point_history').insert({
                 'user_id': userId, 'amount': -pointsDeducted, 'description': 'Retur Penjualan #$returnNumber',
                 'reference_type': 'RETURN', 'reference_id': returnNumber, 'created_at': DateTime.now().toIso8601String(),
               });
+              
               userPointsGained -= pointsDeducted; 
               totalPointsDeducted += pointsDeducted;
+              print('  -> [BERHASIL RETUR] Retur $returnNumber diproses! Poin dipotong -$pointsDeducted Poin');
             }
+            
             hasMoreRetur = (pageRetur * 50) < totalCountRetur; pageRetur++; if (pageRetur > 10) hasMoreRetur = false;
           }
 
+          print('  => Selesai mengecek semua retur untuk $userName.');
+
+         // =============================================
+          // 3. UPDATE PROFIL POIN (KALKULASI ULANG AKURAT)
           // =============================================
-          // 3. UPDATE PROFIL POIN
-          // =============================================
-          if (userPointsGained != 0) { 
-            int finalPoints = currentPoints + userPointsGained;
-            if (finalPoints < 0) finalPoints = 0; 
+          if (userPointsGained != 0) {
+            // Kita hitung total poin terbaru MURNI dari riwayat di Supabase
+            final allHistory = await admin.from('point_history').select('amount').eq('user_id', userId);
+            
+            int finalPoints = 0;
+            for (var item in allHistory) {
+              finalPoints += (item['amount'] as num?)?.toInt() ?? 0;
+            }
+
+            // Poin tidak boleh minus
+            if (finalPoints < 0) finalPoints = 0;
+
             await admin.from('profiles').update({'points': finalPoints, 'updated_at': DateTime.now().toIso8601String()}).eq('id', userId);
             totalUsersAffected++;
-            print('  => [UPDATE] Saldo akhir $userName: $finalPoints Poin (perubahan: ${userPointsGained > 0 ? "+$userPointsGained" : "$userPointsGained"})');
+            print('  => [UPDATE] Poin profil $userName dikalkulasi ulang menjadi: $finalPoints Poin');
           }
 
         } catch (e) {
@@ -518,8 +578,9 @@ class AccurateService {
         }
       }
 
+      print('\n=== SYNC SELESAI ===\n');
       return SyncResult(
-        message: 'Sync Selesai!\nFaktur dicek: $totalInvoicesChecked (+ $totalPointsAdded Poin).\nRetur dicek: $totalReturnsChecked (- $totalPointsDeducted Poin).\nTotal $totalUsersAffected user diperbarui.',
+        message: 'Sync Selesai!\nFaktur baru dicek: $totalInvoicesChecked (+ $totalPointsAdded Poin).\nRetur baru dicek: $totalReturnsChecked (- $totalPointsDeducted Poin).\nTotal $totalUsersAffected user diperbarui.',
         totalInvoicesChecked: totalInvoicesChecked, totalPointsAdded: totalPointsAdded,
         totalUsersAffected: totalUsersAffected, totalSkipped: totalSkipped, errors: errors,
       );
