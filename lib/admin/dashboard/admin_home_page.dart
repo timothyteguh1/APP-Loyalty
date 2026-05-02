@@ -9,9 +9,12 @@ class AdminHomePage extends StatefulWidget {
   State<AdminHomePage> createState() => _AdminHomePageState();
 }
 
-class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProviderStateMixin {
+class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   Map<String, dynamic> _stats = {};
-  List<Map<String, dynamic>> _activities = [];
+  
+  // [TAMBAHAN BARU] Buku Telepon untuk menyimpan pasangan ID = Nama Toko
+  Map<String, String> _userNames = {}; 
+  
   bool _isLoading = true;
 
   final _admin = AdminSupabase.client;
@@ -23,8 +26,9 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    
     _masterCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
-    // [PERBAIKAN] Beri jeda render
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchAll();
     });
@@ -32,33 +36,61 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _masterCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchAll() async {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint("=> [AUTO-REFRESH] Admin kembali membuka aplikasi.");
+      _fetchAll(); 
+    }
+  }
+
+ Future<void> _fetchAll() async {
     setState(() => _isLoading = true);
     _masterCtrl.reset();
     try {
-      final approved = await _admin.from('profiles').select('id').eq('approval_status', 'APPROVED');
-      final pending = await _admin.from('profiles').select('id').eq('approval_status', 'PENDING');
-      final pointsData = await _admin.from('profiles').select('points');
+      // [SOLUSI LOADING LAMA]: Gunakan Future.wait agar 4 tugas ini lari BERSAMAAN!
+      final results = await Future.wait([
+        _admin.from('profiles').select('id').eq('approval_status', 'APPROVED'),
+        _admin.from('profiles').select('id').eq('approval_status', 'PENDING'),
+        _admin.from('profiles').select('id, full_name, points'),
+        _admin.from('rewards').select('id'),
+      ]);
+
+      // Mengambil hasil dari masing-masing pelari sesuai urutan di atas
+      final approved = results[0] as List<dynamic>;
+      final pending = results[1] as List<dynamic>;
+      final profilesData = results[2] as List<dynamic>;
+      final rewards = results[3] as List<dynamic>;
+
       int totalPoints = 0;
-      for (var p in pointsData) { totalPoints += (p['points'] as num?)?.toInt() ?? 0; }
-      final rewards = await _admin.from('rewards').select('id');
-      final activities = await _admin.from('point_history').select('*, profiles!inner(full_name)').order('created_at', ascending: false).limit(8);
+      final Map<String, String> tempNamesMap = {}; // Buku telepon sementara
+      
+      // Kita hitung poin dan susun buku telepon dari hasil pelari ke-3
+      for (var p in profilesData) { 
+        totalPoints += (p['points'] as num?)?.toInt() ?? 0; 
+        tempNamesMap[p['id'].toString()] = p['full_name']?.toString() ?? 'Unknown';
+      }
 
       if (mounted) {
         setState(() {
-          _stats = {'stores': approved.length, 'pending': pending.length, 'points': totalPoints, 'rewards': rewards.length};
-          _activities = List<Map<String, dynamic>>.from(activities);
+          _stats = {
+            'stores': approved.length, 
+            'pending': pending.length, 
+            'points': totalPoints, 
+            'rewards': rewards.length
+          };
+          _userNames = tempNamesMap; 
           _isLoading = false;
         });
-        // Trigger all animations
+        // Trigger semua animasi setelah data siap
         _masterCtrl.forward();
       }
     } catch (e) {
-      // [PERBAIKAN] Print error ke log
       debugPrint("ERROR FETCH ADMIN HOME: $e"); 
       if (mounted) {
         setState(() => _isLoading = false);
@@ -66,7 +98,6 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
       }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     final user = _supabase.auth.currentUser;
@@ -125,100 +156,128 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
                             ]),
                           const SizedBox(height: 32),
 
-                          // ======= ACTIVITY HEADER =======
-                          _buildStaggered(
-                            delay: 0.3,
-                            child: Row(children: [
-                              const Text('Aktivitas Terbaru', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
-                              const Spacer(),
-                              Text('${_activities.length} transaksi', style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
-                            ]),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // ======= ACTIVITY LIST (staggered) =======
-                          if (_activities.isEmpty)
-                            _buildStaggered(
-                              delay: 0.35,
-                              child: Container(
-                                width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 40),
-                                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-                                child: Column(children: [
-                                  Container(width: 56, height: 56, decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(16)), child: const Icon(Icons.inbox_rounded, color: Color(0xFF9CA3AF), size: 28)),
-                                  const SizedBox(height: 12),
-                                  const Text('Belum ada aktivitas', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
-                                  const SizedBox(height: 4),
-                                  const Text('Aktivitas poin akan muncul disini', style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
-                                ]),
-                              ),
-                            )
-                          else
-                            ...List.generate(_activities.length, (i) {
-                              final item = _activities[i];
-                              final int amount = item['amount'] ?? 0;
-                              final bool isPos = amount > 0;
-                              final String name = item['profiles']?['full_name'] ?? 'Unknown';
-                              final String type = item['reference_type'] ?? 'MANUAL';
-
-                              IconData tIcon; Color tColor; String tLabel;
-                              switch (type) {
-                                case 'INVOICE': tIcon = Icons.receipt_long_rounded; tColor = const Color(0xFF3B82F6); tLabel = 'Faktur'; break;
-                                case 'REWARD_CLAIM': tIcon = Icons.card_giftcard_rounded; tColor = const Color(0xFFB71C1C); tLabel = 'Klaim'; break;
-                                case 'SYSTEM_CUTOFF': tIcon = Icons.restart_alt_rounded; tColor = const Color(0xFF6B7280); tLabel = 'Cutoff'; break;
-                                case 'QR_SCAN': tIcon = Icons.qr_code_rounded; tColor = const Color(0xFF8B5CF6); tLabel = 'QR'; break;
-                                default: tIcon = Icons.edit_rounded; tColor = const Color(0xFFF59E0B); tLabel = 'Manual';
+                          // ======= STREAM ACTIVITY =======
+                          StreamBuilder<List<Map<String, dynamic>>>(
+                            stream: _admin
+                                .from('point_history')
+                                .stream(primaryKey: ['id'])
+                                .order('created_at', ascending: false)
+                                .limit(8),
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState == ConnectionState.waiting) {
+                                return const Center(child: CircularProgressIndicator(color: Color(0xFFB71C1C)));
                               }
 
-                              String timeStr = '';
-                              if (item['created_at'] != null) {
-                                try {
-                                  final dt = DateTime.parse(item['created_at']).toLocal();
-                                  final diff = DateTime.now().difference(dt);
-                                  if (diff.inMinutes < 60) timeStr = '${diff.inMinutes}m lalu';
-                                  else if (diff.inHours < 24) timeStr = '${diff.inHours}h lalu';
-                                  else timeStr = '${diff.inDays}d lalu';
-                                } catch (_) {}
-                              }
+                              final List<Map<String, dynamic>> activities = snapshot.data ?? [];
 
-                              return _buildStaggered(
-                                delay: 0.35 + (i * 0.05),
-                                slideUp: true,
-                                child: Container(
-                                  margin: const EdgeInsets.only(bottom: 10),
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(color: const Color(0xFFF3F4F6)),
-                                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // ======= ACTIVITY HEADER =======
+                                  _buildStaggered(
+                                    delay: 0.3,
+                                    child: Row(children: [
+                                      const Text('Aktivitas Terbaru (Real-time)', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+                                      const Spacer(),
+                                      Text('${activities.length} transaksi', style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+                                    ]),
                                   ),
-                                  child: Row(children: [
-                                    Container(width: 42, height: 42, decoration: BoxDecoration(color: tColor.withOpacity(0.08), borderRadius: BorderRadius.circular(12)), child: Icon(tIcon, color: tColor, size: 20)),
-                                    const SizedBox(width: 14),
-                                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                      Row(children: [
-                                        Flexible(child: Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E)), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                                        const SizedBox(width: 8),
-                                        Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: tColor.withOpacity(0.08), borderRadius: BorderRadius.circular(4)), child: Text(tLabel, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: tColor))),
-                                      ]),
-                                      const SizedBox(height: 4),
-                                      Text(timeStr, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
-                                    ])),
-                                    const SizedBox(width: 10),
-                                    // Animated amount text
-                                    TweenAnimationBuilder<double>(
-                                      tween: Tween(begin: 0, end: amount.toDouble()),
-                                      duration: Duration(milliseconds: 600 + (i * 100)),
-                                      curve: Curves.easeOutCubic,
-                                      builder: (_, val, __) => Text(
-                                        '${isPos ? "+" : ""}${val.toInt()}',
-                                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: isPos ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
+                                  const SizedBox(height: 16),
+
+                                  // ======= ACTIVITY LIST =======
+                                  if (activities.isEmpty)
+                                    _buildStaggered(
+                                      delay: 0.35,
+                                      child: Container(
+                                        width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 40),
+                                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                                        child: Column(children: [
+                                          Container(width: 56, height: 56, decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(16)), child: const Icon(Icons.inbox_rounded, color: Color(0xFF9CA3AF), size: 28)),
+                                          const SizedBox(height: 12),
+                                          const Text('Belum ada aktivitas', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF6B7280))),
+                                          const SizedBox(height: 4),
+                                          const Text('Aktivitas poin akan muncul disini', style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+                                        ]),
                                       ),
-                                    ),
-                                  ]),
-                                ),
+                                    )
+                                  else
+                                    ...List.generate(activities.length, (i) {
+                                      final item = activities[i];
+                                      final int amount = item['amount'] ?? 0;
+                                      final bool isPos = amount > 0;
+                                      
+                                      // [PERBAIKAN] Ambil nama dari Buku Telepon _userNames
+                                      final String userIdStr = item['user_id']?.toString() ?? '';
+                                      // Cek apakah ada di kamus, jika tidak tampilkan ID yang dipotong
+                                      final String fallbackName = 'Toko ID: ${userIdStr.length > 5 ? userIdStr.substring(0, 5) : userIdStr}...';
+                                      final String name = _userNames[userIdStr] ?? fallbackName;
+                                      
+                                      final String type = item['reference_type'] ?? 'MANUAL';
+
+                                      IconData tIcon; Color tColor; String tLabel;
+                                      switch (type) {
+                                        case 'INVOICE': tIcon = Icons.receipt_long_rounded; tColor = const Color(0xFF3B82F6); tLabel = 'Faktur'; break;
+                                        case 'REWARD_CLAIM': tIcon = Icons.card_giftcard_rounded; tColor = const Color(0xFFB71C1C); tLabel = 'Klaim'; break;
+                                        case 'SYSTEM_CUTOFF': tIcon = Icons.restart_alt_rounded; tColor = const Color(0xFF6B7280); tLabel = 'Cutoff'; break;
+                                        case 'QR_SCAN': tIcon = Icons.qr_code_rounded; tColor = const Color(0xFF8B5CF6); tLabel = 'QR'; break;
+                                        case 'RETURN': tIcon = Icons.assignment_return_rounded; tColor = const Color(0xFFEF4444); tLabel = 'Retur'; break; // Tambahan untuk Retur
+                                        default: tIcon = Icons.edit_rounded; tColor = const Color(0xFFF59E0B); tLabel = 'Manual';
+                                      }
+
+                                      String timeStr = '';
+                                      if (item['created_at'] != null) {
+                                        try {
+                                          final dt = DateTime.parse(item['created_at']).toLocal();
+                                          final diff = DateTime.now().difference(dt);
+                                          if (diff.inMinutes < 60) timeStr = '${diff.inMinutes}m lalu';
+                                          else if (diff.inHours < 24) timeStr = '${diff.inHours}h lalu';
+                                          else timeStr = '${diff.inDays}d lalu';
+                                        } catch (_) {}
+                                      }
+
+                                      return _buildStaggered(
+                                        delay: 0.35 + (i * 0.05),
+                                        slideUp: true,
+                                        child: Container(
+                                          margin: const EdgeInsets.only(bottom: 10),
+                                          padding: const EdgeInsets.all(16),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(16),
+                                            border: Border.all(color: const Color(0xFFF3F4F6)),
+                                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+                                          ),
+                                          child: Row(children: [
+                                            Container(width: 42, height: 42, decoration: BoxDecoration(color: tColor.withOpacity(0.08), borderRadius: BorderRadius.circular(12)), child: Icon(tIcon, color: tColor, size: 20)),
+                                            const SizedBox(width: 14),
+                                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                              Row(children: [
+                                                Flexible(child: Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E)), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                                                const SizedBox(width: 8),
+                                                Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: tColor.withOpacity(0.08), borderRadius: BorderRadius.circular(4)), child: Text(tLabel, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: tColor))),
+                                              ]),
+                                              const SizedBox(height: 4),
+                                              Text(timeStr, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                                            ])),
+                                            const SizedBox(width: 10),
+                                            // Animated amount text
+                                            TweenAnimationBuilder<double>(
+                                              tween: Tween(begin: 0, end: amount.toDouble()),
+                                              duration: Duration(milliseconds: 600 + (i * 100)),
+                                              curve: Curves.easeOutCubic,
+                                              builder: (_, val, __) => Text(
+                                                '${isPos ? "+" : ""}${val.toInt()}',
+                                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: isPos ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
+                                              ),
+                                            ),
+                                          ]),
+                                        ),
+                                      );
+                                    }),
+                                ],
                               );
-                            }),
+                            },
+                          ),
                         ],
                       ),
                     ),
@@ -231,7 +290,6 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
 
   // ======= STAGGERED ANIMATION HELPER =======
   Widget _buildStaggered({required double delay, required Widget child, bool slideUp = false}) {
-    // Calculate the local progress based on delay
     final double start = delay;
     final double end = (delay + 0.3).clamp(0.0, 1.0);
     final progress = Curves.easeOutCubic.transform(
@@ -259,10 +317,8 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
       ),
       child: Stack(
         children: [
-          // Subtle decorative circles
           Positioned(right: -20, top: -20, child: Container(width: 100, height: 100, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.05)))),
           Positioned(right: 40, bottom: -30, child: Container(width: 60, height: 60, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.04)))),
-          // Content
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -293,10 +349,8 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Welcome shimmer
         _Shimmer(width: double.infinity, height: 120, radius: 20),
         const SizedBox(height: 24),
-        // Stats shimmer
         if (isDesktop)
           Row(children: [
             Expanded(child: _Shimmer(width: double.infinity, height: 110, radius: 16)),
@@ -323,12 +377,6 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
       ]),
     );
   }
-
-  String _fmtNum(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-    return '$n';
-  }
 }
 
 // ======= ANIMATED STAT CARD (count-up number) =======
@@ -339,7 +387,7 @@ class _AnimatedStatCard extends StatelessWidget {
   final Color color;
   final bool highlight;
   final bool format;
-  final double progress; // 0.0 → 1.0
+  final double progress;
 
   const _AnimatedStatCard({
     required this.label,
@@ -359,7 +407,6 @@ class _AnimatedStatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Animate counter with easeOutCubic
     final easedProgress = Curves.easeOutCubic.transform(progress.clamp(0.0, 1.0));
     final currentValue = (targetValue * easedProgress).round();
     final displayValue = format ? _fmtNum(currentValue) : '$currentValue';
@@ -373,7 +420,6 @@ class _AnimatedStatCard extends StatelessWidget {
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Animated icon with scale
         TweenAnimationBuilder<double>(
           tween: Tween(begin: 0.0, end: 1.0),
           duration: const Duration(milliseconds: 500),
