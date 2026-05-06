@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../accurate/accurate_service.dart';
@@ -21,67 +22,148 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
   List<Map<String, dynamic>> _filteredCustomers = [];
   final TextEditingController _searchController = TextEditingController();
 
+  // State untuk AJAX dan Filter
+  String _searchKeyword = '';
+  String _statusFilter = 'ALL';
+  Timer? _debounceTimer;
+  bool _isSearching = false;
+
   @override
   void initState() {
     super.initState();
     _fetchAndCompareCustomers();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _debounceTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _fetchAndCompareCustomers() async {
+    if (!mounted) return;
     setState(() {
-      _isLoading = true;
+      if (_allCustomers.isEmpty) _isLoading = true;
+      _isSearching = true; 
       _errorMessage = null;
     });
+    
     try {
-      final accurateCustomers = await _accurateService.getAccurateCustomers();
-      final registeredData = await _supabase
-          .from('profiles')
-          .select('accurate_customer_id')
-          .not('accurate_customer_id', 'is', null);
-      // Ambil data dari Supabase, jadikan String, lalu bersihkan spasinya
-      final Set<String> registeredIds = registeredData
-          .map(
-            (p) => p['accurate_customer_id'].toString().trim(),
-          ) // <-- Tambahkan .trim() di sini
-          .toSet();
+      if (_statusFilter == 'ACTIVE') {
+        // ==============================================================
+        // [LOGIKA PUTAR BALIK] - Khusus "Aktif Saja"
+        // Ambil langsung dari Supabase, abaikan limit 100 dari Accurate!
+        // ==============================================================
+        final registeredData = await _supabase
+            .from('profiles')
+            .select('full_name, accurate_customer_id')
+            .not('accurate_customer_id', 'is', null)
+            .neq('accurate_customer_id', '');
 
-      final mappedCustomers = accurateCustomers.map((customer) {
-        // Ambil ID dari Accurate, jadikan String, dan bersihkan spasinya juga
-        final systemId =
-            customer['id']?.toString().trim() ??
-            ''; // <-- Tambahkan .trim() di sini
+        List<Map<String, dynamic>> activeCustomers = registeredData.map((p) {
+          return {
+            'name': p['full_name'] ?? 'Tanpa Nama',
+            'customerNo': '-', // Info ini tidak ada di Supabase, kita strip saja
+            'id': p['accurate_customer_id'].toString().trim(),
+            'mobilePhone': '-', // Strip
+            'isRegistered': true,
+          };
+        }).toList();
 
-        return {...customer, 'isRegistered': registeredIds.contains(systemId)};
-      }).toList();
-      mappedCustomers.sort((a, b) {
-        if (a['isRegistered'] == b['isRegistered']) return 0;
-        return a['isRegistered'] ? 1 : -1;
-      });
-      if (mounted)
-        setState(() {
-          _allCustomers = mappedCustomers;
-          _filteredCustomers = mappedCustomers;
-          _isLoading = false;
+        // Jika ada pencarian, filter data Supabase secara lokal
+        if (_searchKeyword.isNotEmpty) {
+          final kw = _searchKeyword.toLowerCase();
+          activeCustomers = activeCustomers.where((c) {
+            return c['name'].toString().toLowerCase().contains(kw) ||
+                   c['id'].toString().toLowerCase().contains(kw);
+          }).toList();
+        }
+
+        if (mounted) {
+          setState(() {
+            _allCustomers = activeCustomers;
+            _filteredCustomers = activeCustomers;
+            _isLoading = false;
+            _isSearching = false;
+          });
+        }
+      } else {
+        // ==============================================================
+        // [LOGIKA NORMAL] - Untuk "Tidak Aktif" atau "Semua Status"
+        // Ambil dari API Accurate seperti biasa dengan sistem Keyword
+        // ==============================================================
+        final accurateCustomers = await _accurateService.getAccurateCustomers(
+          keyword: _searchKeyword,
+          statusFilter: 'ALL', 
+        );
+        
+        final registeredData = await _supabase
+            .from('profiles')
+            .select('accurate_customer_id')
+            .not('accurate_customer_id', 'is', null)
+            .neq('accurate_customer_id', '');
+            
+        final Set<String> registeredIds = registeredData
+            .map((p) => p['accurate_customer_id'].toString().trim())
+            .toSet();
+
+        final mappedCustomers = accurateCustomers.map((customer) {
+          final systemId = customer['id']?.toString().trim() ?? '';
+          return {...customer, 'isRegistered': registeredIds.contains(systemId)};
+        }).toList();
+        
+        // Terapkan Filter INACTIVE secara lokal
+        List<Map<String, dynamic>> finalResult = mappedCustomers;
+        if (_statusFilter == 'INACTIVE') {
+          finalResult = mappedCustomers.where((c) => c['isRegistered'] == false).toList();
+        }
+
+        finalResult.sort((a, b) {
+          if (a['isRegistered'] == b['isRegistered']) return 0;
+          return a['isRegistered'] ? 1 : -1;
         });
+
+        if (mounted) {
+          setState(() {
+            _allCustomers = mappedCustomers;
+            _filteredCustomers = finalResult;
+            _isLoading = false;
+            _isSearching = false;
+          });
+        }
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _errorMessage = e.toString().contains('Kredensial')
               ? 'Silakan sambungkan ulang Accurate di menu Integrasi.'
               : 'Gagal memuat data: $e';
           _isLoading = false;
+          _isSearching = false;
         });
+      }
     }
   }
 
-  void _filterSearch(String query) {
-    final lowerQuery = query.toLowerCase();
-    setState(() {
-      _filteredCustomers = _allCustomers.where((c) {
-        final name = (c['name'] ?? '').toString().toLowerCase();
-        final no = (c['customerNo'] ?? '').toString().toLowerCase();
-        return name.contains(lowerQuery) || no.contains(lowerQuery);
-      }).toList();
+  void _onFilterChanged(String? newValue) {
+    if (newValue != null && newValue != _statusFilter) {
+      setState(() {
+        _statusFilter = newValue;
+      });
+      // Karena kita pakai 2 mesin yang berbeda (Supabase vs Accurate), 
+      // wajib memanggil ulang data setiap kali filter diubah.
+      _fetchAndCompareCustomers(); 
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() => _searchKeyword = value);
+
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _fetchAndCompareCustomers(); 
     });
   }
 
@@ -132,7 +214,6 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
           ),
         ],
       ),
-      // [FIX] Center + maxWidth
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1000),
@@ -144,27 +225,61 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                   horizontal: 16,
                   vertical: 12,
                 ),
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: _filterSearch,
-                  decoration: InputDecoration(
-                    hintText: 'Cari nama toko atau kode pelanggan...',
-                    hintStyle: const TextStyle(
-                      color: Color(0xFF94A3B8),
-                      fontSize: 14,
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: _onSearchChanged,
+                        decoration: InputDecoration(
+                          hintText: 'Cari nama toko atau kode pelanggan...',
+                          hintStyle: const TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 14,
+                          ),
+                          prefixIcon: _isSearching
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12.0),
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(
+                                  Icons.search_rounded,
+                                  color: Color(0xFF94A3B8),
+                                ),
+                          filled: true,
+                          fillColor: const Color(0xFFF1F5F9),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
                     ),
-                    prefixIcon: const Icon(
-                      Icons.search_rounded,
-                      color: Color(0xFF94A3B8),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 1,
+                      child: DropdownButtonFormField<String>(
+                        value: _statusFilter,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: const Color(0xFFF1F5F9),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'ALL', child: Text('Semua Status', style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(value: 'ACTIVE', child: Text('Aktif Saja', style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(value: 'INACTIVE', child: Text('Tidak Aktif', style: TextStyle(fontSize: 13))),
+                        ],
+                        onChanged: _onFilterChanged,
+                      ),
                     ),
-                    filled: true,
-                    fillColor: const Color(0xFFF1F5F9),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
+                  ],
                 ),
               ),
               if (!_isLoading && _errorMessage == null)
@@ -260,7 +375,6 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                           ],
                         ),
                       )
-                    // [FIX] Desktop table vs mobile list
                     : isDesktop
                     ? _buildDesktopTable()
                     : _buildMobileList(),
@@ -272,7 +386,6 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
     );
   }
 
-  // [BARU] Desktop table
   Widget _buildDesktopTable() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
@@ -460,7 +573,6 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
     );
   }
 
-  // Mobile list (original)
   Widget _buildMobileList() {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -470,7 +582,7 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
         final name = customer['name'] ?? 'Tanpa Nama';
         final customerNo = customer['customerNo'] ?? '-';
         final systemId = customer['id']?.toString() ?? '';
-        final phone = customer['mobilePhone'] ?? 'No HP tidak tersedia';
+        final phone = customer['mobilePhone'] ?? '-';
         final isRegistered = customer['isRegistered'] == true;
         return Container(
           margin: const EdgeInsets.only(bottom: 12),

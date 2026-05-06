@@ -220,7 +220,8 @@ class AccurateService {
     return data;
   }
 
-  Future<List<Map<String, dynamic>>> getAccurateCustomers() async {
+  // UPDATE: Fungsi ini sekarang mendukung AJAX (Pencarian Server-Side dan Filter Status)
+  Future<List<Map<String, dynamic>>> getAccurateCustomers({String keyword = '', String statusFilter = 'ALL'}) async {
     try {
       final config = await _supabase.from('app_config').select().inFilter('key', ['accurate_db_host', 'accurate_access_token', 'accurate_db_session']);
       String? host, token, session;
@@ -233,8 +234,24 @@ class AccurateService {
         throw Exception('Kredensial Accurate tidak ditemukan.'); 
       }
 
-      final url = Uri.parse('$host/accurate/api/customer/list.do?fields=id,customerNo,name,mobilePhone');
+      // Tambahkan pageSize 100 agar cukup banyak yang ditarik sekali waktu, dan field 'suspended'
+      String urlStr = '$host/accurate/api/customer/list.do?fields=id,customerNo,name,mobilePhone,suspended&sp.pageSize=100';
+
+      // Terapkan Keyword Search (Accurate pakai parameter 'keywords' dengan huruf 'S')
+      if (keyword.isNotEmpty) {
+        urlStr += '&keywords=${Uri.encodeComponent(keyword)}';
+      }
+
+      // Terapkan Filter Status (suspended = true artinya INACTIVE)
+      if (statusFilter == 'ACTIVE') {
+        urlStr += '&filter.suspended.op=EQUAL&filter.suspended.val[0]=false';
+      } else if (statusFilter == 'INACTIVE') {
+        urlStr += '&filter.suspended.op=EQUAL&filter.suspended.val[0]=true';
+      }
+
+      final url = Uri.parse(urlStr);
       final response = await _proxy(accurateUrl: url.toString(), headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session});
+      
       if (response['s'] == true && response['d'] != null) {
         return List<Map<String, dynamic>>.from(response['d']);
       } else { throw Exception('API Error: ${response['d']}'); }

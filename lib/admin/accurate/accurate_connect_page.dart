@@ -1,3 +1,4 @@
+import 'dart:async'; // [UPDATE] Import Timer untuk debounce
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +16,7 @@ class AccurateConnectPage extends StatefulWidget {
 class _AccurateConnectPageState extends State<AccurateConnectPage> {
   final _admin = AdminSupabase.client;
   final _tokenController = TextEditingController();
+  final _accurateService = AccurateService(); // [UPDATE] Instance AccurateService
 
   bool _isLoading = true;
   bool _isSyncing = false;
@@ -26,6 +28,13 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
 
   static const String _knownDbId = '2570323';
 
+  // [UPDATE] State untuk AJAX dan Filter
+  List<dynamic> _accurateCustomers = [];
+  String _searchKeyword = '';
+  String _statusFilter = 'ALL'; 
+  Timer? _debounceTimer;
+  bool _isSearching = false; 
+
   @override
   void initState() {
     super.initState();
@@ -35,6 +44,7 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
   @override
   void dispose() {
     _tokenController.dispose();
+    _debounceTimer?.cancel(); // [UPDATE] Cancel timer saat dispose
     super.dispose();
   }
 
@@ -137,6 +147,46 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
     _showSnack('Koneksi diputus', true);
   }
 
+  // [UPDATE] Fungsi AJAX untuk Pencarian dan Filter
+  void _onFilterChanged(String? newValue) {
+    if (newValue != null) {
+      setState(() {
+        _statusFilter = newValue;
+      });
+      _triggerAjaxSearch();
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() => _searchKeyword = value);
+    
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+    
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _triggerAjaxSearch();
+    });
+  }
+
+  Future<void> _triggerAjaxSearch() async {
+    if (!_isSessionOpen) return; // Pastikan session terbuka
+    
+    setState(() => _isSearching = true);
+    try {
+      final results = await _accurateService.getAccurateCustomers(
+        keyword: _searchKeyword,
+        statusFilter: _statusFilter,
+      );
+      
+      setState(() {
+        _accurateCustomers = results; 
+      });
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+    } finally {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
   void _showSnack(String msg, bool success) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600)), backgroundColor: success ? const Color(0xFF10B981) : const Color(0xFFEF4444), behavior: SnackBarBehavior.floating, margin: const EdgeInsets.all(20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
@@ -196,6 +246,76 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
                 SizedBox(width: double.infinity, height: 44, child: ElevatedButton.icon(onPressed: _refreshSession, icon: const Icon(Icons.lock_open_rounded, size: 18), label: Text(_isSessionOpen ? 'Refresh Session' : 'Buka Database', style: const TextStyle(fontWeight: FontWeight.w600)), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))))),
               ]) : const SizedBox.shrink()),
               const SizedBox(height: 16),
+
+              // [UPDATE] UI Pencarian dan Filter AJAX
+              if (_isSessionOpen) ...[
+                const Text('Pencarian Pelanggan Accurate', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        onChanged: _onSearchChanged,
+                        decoration: InputDecoration(
+                          hintText: 'Cari nama atau kode pelanggan...',
+                          prefixIcon: _isSearching 
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12.0),
+                                  child: CircularProgressIndicator(strokeWidth: 2), 
+                                )
+                              : const Icon(Icons.search),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          filled: true,
+                          fillColor: Colors.grey[100],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 1,
+                      child: DropdownButtonFormField<String>(
+                        value: _statusFilter,
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          filled: true,
+                          fillColor: Colors.white,
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'ALL', child: Text('Semua Status')),
+                          DropdownMenuItem(value: 'ACTIVE', child: Text('Aktif Saja')),
+                          DropdownMenuItem(value: 'INACTIVE', child: Text('Tidak Aktif')),
+                        ],
+                        onChanged: _onFilterChanged, 
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // Menampilkan hasil pencarian
+                if (_accurateCustomers.isNotEmpty) ...[
+                  Text('Menampilkan ${_accurateCustomers.length} pelanggan Accurate:'),
+                  const SizedBox(height: 8),
+                  // Render daftar pelanggan (Silakan sesuaikan dengan kebutuhan UI kamu)
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _accurateCustomers.length,
+                    itemBuilder: (context, index) {
+                      final customer = _accurateCustomers[index];
+                      return ListTile(
+                        title: Text(customer['name'] ?? 'Unknown'),
+                        subtitle: Text(customer['customerNo'] ?? ''),
+                        trailing: Text(customer['suspended'] == true ? 'Tidak Aktif' : 'Aktif'),
+                      );
+                    },
+                  ),
+                ] else if (!_isSearching && _searchKeyword.isNotEmpty) ...[
+                  const Text('Pelanggan tidak ditemukan.'),
+                ],
+                const SizedBox(height: 20),
+              ],
 
               _buildCard(step: 3, title: 'Sync Faktur → Poin', subtitle: 'Konversi faktur penjualan Accurate ke poin toko', isDone: _lastSyncResult != null, isDisabled: !_isSessionOpen, child: _isSessionOpen ? Column(children: [
                 Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFFDE68A))), child: const Row(children: [Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFFF59E0B)), SizedBox(width: 8), Expanded(child: Text('Anti-double otomatis — faktur yang sudah diproses tidak akan dihitung ulang.', style: TextStyle(fontSize: 12, color: Color(0xFF92400E), height: 1.4)))])),
@@ -291,5 +411,4 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
       Expanded(child: Text(text, style: const TextStyle(fontSize: 13, color: Color(0xFF374151)))),
     ]));
   }
-  
 }
