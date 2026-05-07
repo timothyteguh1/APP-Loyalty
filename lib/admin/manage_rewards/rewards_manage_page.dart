@@ -259,13 +259,13 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                 )),
               ]),
             ),
-          Expanded(child: Padding(
+          Padding(
             padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: r['type'] == 'VOUCHER' ? const Color(0xFF3B82F6).withOpacity(0.1) : const Color(0xFF10B981).withOpacity(0.1), borderRadius: BorderRadius.circular(6)), child: Text(r['type'] == 'VOUCHER' ? 'Voucher' : 'Produk', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: r['type'] == 'VOUCHER' ? const Color(0xFF3B82F6) : const Color(0xFF10B981)))),
                 if (!isActive) ...[const SizedBox(width: 6), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(6)), child: const Text('Nonaktif', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFEF4444))))],
-                const Spacer(),
+                const SizedBox(height: 8),
                 Row(children: [const Icon(Icons.stars_rounded, color: Color(0xFFF59E0B), size: 16), const SizedBox(width: 4), Text('${r['points_required']}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))]),
               ]),
               const SizedBox(height: 10),
@@ -273,7 +273,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
               if (r['description'] != null && r['description'].toString().isNotEmpty) ...[const SizedBox(height: 4), Text(r['description'], style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)), maxLines: 2, overflow: TextOverflow.ellipsis)],
               const SizedBox(height: 10),
               Text('Stok: ${r['stock'] ?? 0}', style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
-              const Spacer(),
+              const SizedBox(height: 8),
               Row(children: [
                 _actionBtn(Icons.edit_rounded, 'Edit', const Color(0xFF3B82F6), () => _showRewardForm(existing: r)), const SizedBox(width: 6),
                 _actionBtn(isBestDeal ? Icons.star_rounded : Icons.star_border_rounded, isBestDeal ? 'Hapus BD' : 'Best Deal', const Color(0xFFF59E0B), () => _toggleBestDeal(r)), const SizedBox(width: 6),
@@ -281,7 +281,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                 _actionBtn(Icons.delete_rounded, 'Hapus', const Color(0xFFEF4444), () => _deleteReward(r)),
               ]),
             ]),
-          )),
+          ),
         ]),
       ),
     );

@@ -199,7 +199,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         return Scaffold(
           body: Stack(
             children: [
-              Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF8B0000), Color(0xFFB71C1C), Color(0xFFD32F2F)]))),
+              Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF0A0E1A), Color(0xFF0D1B2A), Color(0xFF1A2744)]))),
               ...List.generate(6, (i) => AnimatedBuilder(
                 animation: _bgAnim,
                 builder: (_, __) {

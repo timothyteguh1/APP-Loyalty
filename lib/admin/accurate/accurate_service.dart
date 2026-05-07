@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -8,10 +9,7 @@ class AccurateService {
   final _supabase = Supabase.instance.client;
 
   static const String _clientId = '79aaa170-8897-4cf7-b0d1-b8ec78dd07d1';
-  // Ganti 'const' menjadi 'getter' agar bisa dinamis
   static String get _redirectUri {
-    // Uri.base.origin akan otomatis menjadi 'http://localhost:3000' saat di laptop
-    // dan menjadi 'https://loyalty.programdeus.my.id' saat sudah online!
     return '${Uri.base.origin}/oauth_callback.html';
   }
   static const String _oauthBaseUrl = 'https://account.accurate.id';
@@ -274,7 +272,6 @@ class AccurateService {
     return data;
   }
 
-  // FUNGSI BARU: AMBIL DETAIL RETUR
   static Future<Map<String, dynamic>> fetchReturnDetail(
     String host,
     String session,
@@ -296,7 +293,6 @@ class AccurateService {
     return data;
   }
 
-  // UPDATE: Fungsi ini sekarang mendukung AJAX (Pencarian Server-Side dan Filter Status)
   Future<List<Map<String, dynamic>>> getAccurateCustomers({
     String keyword = '',
     String statusFilter = 'ALL',
@@ -321,16 +317,13 @@ class AccurateService {
         throw Exception('Kredensial Accurate tidak ditemukan.');
       }
 
-      // Tambahkan pageSize 100 agar cukup banyak yang ditarik sekali waktu, dan field 'suspended'
       String urlStr =
           '$host/accurate/api/customer/list.do?fields=id,customerNo,name,email,mobilePhone,suspended&sp.pageSize=100';
 
-      // Terapkan Keyword Search (Accurate pakai parameter 'keywords' dengan huruf 'S')
       if (keyword.isNotEmpty) {
         urlStr += '&keywords=${Uri.encodeComponent(keyword)}';
       }
 
-      // Terapkan Filter Status (suspended = true artinya INACTIVE)
       if (statusFilter == 'ACTIVE') {
         urlStr += '&filter.suspended.op=EQUAL&filter.suspended.val[0]=false';
       } else if (statusFilter == 'INACTIVE') {
@@ -587,7 +580,6 @@ class AccurateService {
                 continue;
               }
 
-              // [GEMBOK 2 MUTLAK INVOICE]
               final String detailCustId =
                   detailData['customer']?['id']?.toString() ?? '';
               if (detailCustId != accurateCustomerId) {
@@ -717,19 +709,17 @@ class AccurateService {
 
               totalReturnsChecked++;
 
-              // [GEMBOK 1 LIST RETUR]
               final String listReturnCustId =
                   ret['customer']?['id']?.toString() ??
                   ret['customer.id']?.toString() ??
                   '';
               if (listReturnCustId.isNotEmpty &&
                   listReturnCustId != accurateCustomerId) {
-                continue; // Skip diam-diam biar gak menuhin log kalo ada dari list
+                continue; 
               }
 
               onProgress?.call('Cek detail retur $returnNumber...');
 
-              // --- AMBIL DETAIL RETUR ---
               Map<String, dynamic> returDetail;
               try {
                 final resDetailRetur = await fetchReturnDetail(
@@ -746,7 +736,6 @@ class AccurateService {
                 continue;
               }
 
-              // [GEMBOK 2 MUTLAK RETUR] Validasi ketat ID Customer dari Detail
               final String exactReturnCustId =
                   returDetail['customer']?['id']?.toString() ?? '';
               if (exactReturnCustId != accurateCustomerId) {
@@ -806,7 +795,6 @@ class AccurateService {
           // 3. UPDATE PROFIL POIN (KALKULASI ULANG AKURAT)
           // =============================================
           if (userPointsGained != 0) {
-            // Kita hitung total poin terbaru MURNI dari riwayat di Supabase
             final allHistory = await admin
                 .from('point_history')
                 .select('amount')
@@ -817,7 +805,6 @@ class AccurateService {
               finalPoints += (item['amount'] as num?)?.toInt() ?? 0;
             }
 
-            // Poin tidak boleh minus
             if (finalPoints < 0) finalPoints = 0;
 
             await admin
@@ -882,21 +869,19 @@ class AccurateService {
     }
   }
 
-// =========================================================================
-  // FITUR 1: TEMBAK BALIK KE ACCURATE (BI-DIRECTIONAL SYNC)
-  // Dipanggil saat user klik "Simpan" di halaman Edit Profile
+  // =========================================================================
+  // FITUR: TEMBAK BALIK KE ACCURATE (MENDUKUNG ALAMAT)
   // =========================================================================
   Future<bool> updateCustomerToAccurate({
     required String customerId,
     required String name,
     String? email,
     String? phone,
+    String? address,
   }) async {
     try {
-      // 1. Ambil Kredensial Accurate dari tabel app_config (Sama seperti getAccurateCustomers)
       final config = await _supabase.from('app_config').select().inFilter(
-        'key',
-        ['accurate_db_host', 'accurate_access_token', 'accurate_db_session'],
+        'key', ['accurate_db_host', 'accurate_access_token', 'accurate_db_session'],
       );
       
       String? host, token, session;
@@ -906,49 +891,59 @@ class AccurateService {
         if (row['key'] == 'accurate_db_session') session = row['value'];
       }
 
-      // Pastikan kredensial lengkap
-      if (host == null || token == null || session == null || 
-          host.isEmpty || session.isEmpty || token.isEmpty) {
-        print('Kredensial Accurate tidak lengkap, batal update.');
-        return false;
-      }
+      if (host == null || token == null || session == null) return false;
 
-      // 2. Siapkan Data yang mau di-update
+      // [KUNCI PERBAIKAN] ID wajib diubah ke INT agar tidak return NULL
       final Map<String, dynamic> bodyPayload = {
-        'id': customerId,
+        'id': int.tryParse(customerId) ?? 0, 
         'name': name,
       };
 
       if (email != null && email.isNotEmpty) bodyPayload['email'] = email;
       if (phone != null && phone.isNotEmpty) bodyPayload['mobilePhone'] = phone;
+      if (address != null && address.isNotEmpty) bodyPayload['billStreet'] = address; // Pakai billStreet untuk alamat
 
-      // 3. Tembak API Accurate menggunakan fungsi _proxy agar aman dari CORS Web!
       final response = await _proxy(
         accurateUrl: '$host/accurate/api/customer/save.do',
         method: 'POST',
-        headers: {
-          'Authorization': 'Bearer $token',
-          'X-Session-ID': session,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
+        headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session},
         body: bodyPayload,
       );
 
-      // 4. Cek hasil kembalian dari Accurate
-      if (response['s'] == true) {
-        print('Berhasil tembak balik data ke Accurate!');
-        return true; 
-      }
-      
-      print('Gagal dari server Accurate: ${response['d']}');
-      return false;
+      return response['s'] == true;
     } catch (e) {
-      print('Error Tembak Balik Accurate: $e');
+      debugPrint('Error Update Accurate: $e');
       return false;
     }
   }
+  Future<void> syncLocalToAccurate({
+    required List<Map<String, dynamic>> profiles,
+    Function(String)? onProgress,
+  }) async {
+    int successCount = 0;
+    int failCount = 0;
 
-Future<void> autoSyncAccurateToSupabase() async {
+    for (var profile in profiles) {
+      final String? custId = profile['accurate_customer_id'];
+      if (custId == null || custId.isEmpty) continue;
+
+      onProgress?.call('Mensinkronkan ${profile['full_name']}...');
+
+      final bool success = await updateCustomerToAccurate(
+        customerId: custId,
+        name: profile['full_name'] ?? '',
+        phone: profile['phone'],
+        address: profile['address'],
+        email: profile['email'],
+      );
+
+      if (success) successCount++; else failCount++;
+    }
+    
+    onProgress?.call('Sync Selesai! Berhasil: $successCount, Gagal: $failCount');
+  }
+  
+  Future<void> autoSyncAccurateToSupabase() async {
     try {
       print('\n🔍 === MULAI PROSES AUTO SYNC PENYISIRAN MASAL ===');
       
@@ -966,11 +961,9 @@ Future<void> autoSyncAccurateToSupabase() async {
       int currentPage = 1;
       bool hasMore = true;
 
-      // KITA LOOPING SAMPAI SEMUA HALAMAN HABIS
       while (hasMore) {
         print('📄 Menyisir Accurate Halaman: $currentPage...');
         
-        // Ambil data per halaman (Kita pakai fungsi bantuan baru di bawah)
         final customers = await getAccurateCustomersPaged(page: currentPage);
         
         if (customers.isEmpty) {
@@ -1007,14 +1000,12 @@ Future<void> autoSyncAccurateToSupabase() async {
           }
         }
 
-        // Jika data yang ditarik kurang dari 100, berarti ini halaman terakhir
         if (customers.length < 100) {
           hasMore = false;
         } else {
           currentPage++;
         }
         
-        // Safety break agar tidak looping selamanya jika ada error
         if (currentPage > 50) hasMore = false; 
       }
       
@@ -1025,7 +1016,6 @@ Future<void> autoSyncAccurateToSupabase() async {
     }
   }
 
-  // FUNGSI BANTUAN UNTUK AMBIL DATA PER HALAMAN
   Future<List<Map<String, dynamic>>> getAccurateCustomersPaged({required int page}) async {
     final config = await _supabase.from('app_config').select().inFilter(
       'key', ['accurate_db_host', 'accurate_access_token', 'accurate_db_session'],
@@ -1037,7 +1027,6 @@ Future<void> autoSyncAccurateToSupabase() async {
       if (row['key'] == 'accurate_db_session') session = row['value'];
     }
 
-    // Gunakan parameter sp.page untuk berpindah halaman
     String urlStr = '$host/accurate/api/customer/list.do?fields=id,customerNo,name,email,mobilePhone&sp.pageSize=100&sp.page=$page';
 
     final response = await _proxy(
@@ -1067,6 +1056,4 @@ class SyncResult {
     required this.totalSkipped,
     this.errors = const [],
   });
-
-  
 }

@@ -118,7 +118,7 @@ Future<void> _handleLogin() async {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(children: [
-        Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF8B0000), Color(0xFFB71C1C), Color(0xFFD32F2F)]))),
+        Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF0A0E1A), Color(0xFF0D1B2A), Color(0xFF1A2744)]))),
         ...List.generate(5, (i) => AnimatedBuilder(animation: _bgAnimController, builder: (context, child) {
           final double progress = _bgAnimController.value;
           return Positioned(left: (i * 80.0 + 20) + (progress * 20 * (i.isEven ? 1 : -1)), top: (i * 120.0 - 50) + (progress * 30 * (i.isOdd ? 1 : -1)), child: Container(width: 100.0 + i * 60.0, height: 100.0 + i * 60.0, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.03 + (i * 0.01)))));
@@ -133,8 +133,8 @@ Future<void> _handleLogin() async {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 440),
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    ScaleTransition(scale: _logoScale, child: Container(width: 80, height: 80, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 30, offset: const Offset(0, 10))]),
-                      child: Stack(alignment: Alignment.center, children: [Container(width: 60, height: 60, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFFB71C1C).withOpacity(0.1), width: 2))), const Text('U', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: Color(0xFFB71C1C), letterSpacing: -1))]))),
+                    ScaleTransition(scale: _logoScale, child: Container(width: 88, height: 88, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(26), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 30, offset: const Offset(0, 10))]),
+  child: ClipRRect(borderRadius: BorderRadius.circular(26), child: Image.asset('assets/images/logo.png', fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Center(child: Text('U', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w900, color: Color(0xFFB71C1C)))))))),
                     const SizedBox(height: 24),
 
                     FadeTransition(opacity: _titleFade, child: Column(children: [
