@@ -11,7 +11,8 @@ import 'login_page.dart';
 import 'email_verification_page.dart';
 
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key});
+  final String? initialEmail; // Penambahan
+  const RegisterPage({super.key, this.initialEmail}); // Penambahan
 
   @override
   State<RegisterPage> createState() => _RegisterPageState();
@@ -50,6 +51,12 @@ class _RegisterPageState extends State<RegisterPage> with TickerProviderStateMix
   @override
   void initState() {
     super.initState();
+    
+    // Penambahan: Isi otomatis jika ada initialEmail
+    if (widget.initialEmail != null) {
+      _emailController.text = widget.initialEmail!;
+    }
+
     _bgAnimController = AnimationController(vsync: this, duration: const Duration(seconds: 6))..repeat(reverse: true);
     _headerAnimController = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..forward();
     _headerFade = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(parent: _headerAnimController, curve: Curves.easeOut));

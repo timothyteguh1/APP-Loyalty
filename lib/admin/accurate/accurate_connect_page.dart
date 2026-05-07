@@ -297,7 +297,7 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
                 if (_accurateCustomers.isNotEmpty) ...[
                   Text('Menampilkan ${_accurateCustomers.length} pelanggan Accurate:'),
                   const SizedBox(height: 8),
-                  // Render daftar pelanggan (Silakan sesuaikan dengan kebutuhan UI kamu)
+                  // Render daftar pelanggan
                   ListView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -324,6 +324,56 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
                 if (_lastSyncResult != null) ...[_buildSyncResult(_lastSyncResult!), const SizedBox(height: 10)],
                 SizedBox(width: double.infinity, height: 48, child: ElevatedButton.icon(onPressed: _isSyncing ? null : _startSync, icon: _isSyncing ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.sync_rounded, size: 20), label: Text(_isSyncing ? 'Menyinkronkan...' : 'Mulai Sync Faktur', style: const TextStyle(fontWeight: FontWeight.w600)), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB71C1C), foregroundColor: Colors.white, disabledBackgroundColor: const Color(0xFFB71C1C).withOpacity(0.5), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))))),
               ]) : const SizedBox.shrink()),
+              const SizedBox(height: 16),
+
+              // =================================================================
+              // [TAMBAHAN BARU] Langkah 4: Auto-Provisioning Pelanggan (Bikin Akun)
+              // =================================================================
+              _buildCard(
+                step: 4, 
+                title: 'Auto-Provisioning Pelanggan', 
+                subtitle: 'Tarik data dari Accurate dan buatkan akun bayangan otomatis', 
+                isDone: false, 
+                isDisabled: !_isSessionOpen, 
+                child: _isSessionOpen ? Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12), 
+                      decoration: BoxDecoration(color: const Color(0xFFF0F9FF), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFBAE6FD))), 
+                      child: const Row(children: [Icon(Icons.mark_email_read_rounded, size: 16, color: Color(0xFF1D4ED8)), SizedBox(width: 8), Expanded(child: Text('Sistem akan mencari pelanggan Accurate yang memiliki email dan mengirimkan tautan undangan.', style: TextStyle(fontSize: 12, color: Color(0xFF1E3A8A), height: 1.4)))])
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity, 
+                      height: 48, 
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Memulai pengecekan ke Accurate... tunggu sebentar.')),
+                          );
+                          try {
+                            await _accurateService.autoSyncAccurateToSupabase();
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Pengecekan & pembuatan akun selesai! Cek email.'), backgroundColor: Color(0xFF10B981)),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Gagal: $e'), backgroundColor: Colors.red),
+                              );
+                            }
+                          }
+                        }, 
+                        icon: const Icon(Icons.group_add_rounded, size: 20), 
+                        label: const Text('Test Auto-Sync & Bikin Akun', style: TextStyle(fontWeight: FontWeight.w600)), 
+                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1D4ED8), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))
+                      )
+                    ),
+                  ]
+                ) : const SizedBox.shrink()
+              ),
 
               const SizedBox(height: 20),
               _buildGuideCard(),

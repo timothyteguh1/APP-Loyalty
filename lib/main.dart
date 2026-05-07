@@ -4,6 +4,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'controllers/auth_controller.dart';
 import 'features/auth/login_page.dart';
+import 'features/auth/email_entry_page.dart'; // [TAMBAHAN TAHAP 3]
+import 'features/account/edit_profile_page.dart'; // [TAMBAHAN TAHAP 4]
 import 'features/auth/pending_page.dart';
 import 'features/auth/rejected_page.dart';
 import 'features/home/home_page.dart';
@@ -60,7 +62,7 @@ class AuthGate extends StatelessWidget {
 
         final Session? session = snapshot.data?.session;
 
-        // [BARU] Cek apakah ini event PASSWORD_RECOVERY
+        // Cek apakah ini event PASSWORD_RECOVERY
         final AuthChangeEvent? event = snapshot.data?.event;
         if (event == AuthChangeEvent.passwordRecovery) {
           // User baru klik link reset password → tampilkan form ganti password
@@ -70,7 +72,8 @@ class AuthGate extends StatelessWidget {
         if (session != null) {
           return const _ApprovalChecker();
         } else {
-          return const LoginPage();
+          // [UBAHAN TAHAP 3] Arahkan ke Teras Email (EmailEntryPage) bukan LoginPage
+          return const EmailEntryPage(); 
         }
       },
     );
@@ -78,7 +81,7 @@ class AuthGate extends StatelessWidget {
 }
 
 // ============================================================
-// [BARU] HALAMAN RESET PASSWORD
+// HALAMAN RESET PASSWORD
 // Muncul otomatis saat user klik link reset dari email
 // ============================================================
 class _ResetPasswordPage extends StatefulWidget {
@@ -316,7 +319,7 @@ class _ResetPasswordPageState extends State<_ResetPasswordPage> {
 }
 
 // ============================================================
-// APPROVAL CHECKER
+// APPROVAL CHECKER (Dengan Satpam Biodata)
 // ============================================================
 class _ApprovalChecker extends StatefulWidget {
   const _ApprovalChecker();
@@ -329,6 +332,7 @@ class _ApprovalCheckerState extends State<_ApprovalChecker> {
   final _authController = AuthController();
   bool _isLoading = true;
   String _status = 'PENDING';
+  bool _isProfileCompleted = false; // [TAMBAHAN TAHAP 4]
   Map<String, dynamic>? _profileData;
 
   @override
@@ -341,10 +345,14 @@ class _ApprovalCheckerState extends State<_ApprovalChecker> {
     try {
       final profile = await _authController.getProfile();
       final status = profile?['approval_status'] ?? 'PENDING';
+      
+      // [TAMBAHAN TAHAP 4] Ambil status kelengkapan biodata
+      final isCompleted = profile?['is_profile_completed'] == true;
 
       if (mounted) {
         setState(() {
           _status = status;
+          _isProfileCompleted = isCompleted; // Simpan ke state
           _profileData = profile;
           _isLoading = false;
         });
@@ -353,6 +361,7 @@ class _ApprovalCheckerState extends State<_ApprovalChecker> {
       if (mounted) {
         setState(() {
           _status = 'PENDING';
+          _isProfileCompleted = false; // Gagal ambil data, anggap false
           _isLoading = false;
         });
       }
@@ -376,6 +385,14 @@ class _ApprovalCheckerState extends State<_ApprovalChecker> {
       );
     }
 
+    // [TAMBAHAN TAHAP 4] SATPAM BIODATA BEKERJA!
+    // Jika profil belum lengkap, paksa belok ke halaman Edit Profile
+    if (!_isProfileCompleted) {
+      return const EditProfilePage();
+    }
+
+    // Jika profil sudah lengkap (is_profile_completed == true), 
+    // lanjutkan pengecekan approval_status seperti biasa
     switch (_status) {
       case 'APPROVED':
         return const HomePage();
