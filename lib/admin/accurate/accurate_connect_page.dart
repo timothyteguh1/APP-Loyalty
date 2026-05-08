@@ -26,7 +26,7 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
   SyncResult? _lastSyncResult;
   String _syncProgress = '';
 
-  static const String _knownDbId = '2570323';
+  static const String _knownDbId = '74873';
 
   // [UPDATE] State untuk AJAX dan Filter
   List<dynamic> _accurateCustomers = [];

@@ -8,14 +8,14 @@ import 'package:upsol_loyalty/admin/admin_supabase.dart';
 class AccurateService {
   final _supabase = Supabase.instance.client;
 
-  static const String _clientId = '79aaa170-8897-4cf7-b0d1-b8ec78dd07d1';
+  static const String _clientId = '28816117-e366-4304-bcbf-d796509ec44a';
   static String get _redirectUri {
     return '${Uri.base.origin}/oauth_callback.html';
   }
   static const String _oauthBaseUrl = 'https://account.accurate.id';
   static const String _scope =
       'sales_invoice_view customer_view item_view sales_invoice_save sales_return_view';
-  static const String _knownDbId = '2570323';
+  static const String _knownDbId = '74873';
 
   static Future<Map<String, dynamic>> _proxy({
     required String accurateUrl,
@@ -893,7 +893,6 @@ class AccurateService {
 
       if (host == null || token == null || session == null) return false;
 
-      // [KUNCI PERBAIKAN] ID wajib diubah ke INT agar tidak return NULL
       final Map<String, dynamic> bodyPayload = {
         'id': int.tryParse(customerId) ?? 0, 
         'name': name,
@@ -901,7 +900,7 @@ class AccurateService {
 
       if (email != null && email.isNotEmpty) bodyPayload['email'] = email;
       if (phone != null && phone.isNotEmpty) bodyPayload['mobilePhone'] = phone;
-      if (address != null && address.isNotEmpty) bodyPayload['billStreet'] = address; // Pakai billStreet untuk alamat
+      if (address != null && address.isNotEmpty) bodyPayload['billStreet'] = address; 
 
       final response = await _proxy(
         accurateUrl: '$host/accurate/api/customer/save.do',
@@ -916,6 +915,7 @@ class AccurateService {
       return false;
     }
   }
+
   Future<void> syncLocalToAccurate({
     required List<Map<String, dynamic>> profiles,
     Function(String)? onProgress,
@@ -982,14 +982,16 @@ class AccurateService {
             try {
               final res = await supabase.auth.admin.inviteUserByEmail(email);
               if (res.user?.id != null) {
+                // 👇 PERBAIKAN JALUR ACCURATE 👇
                 await supabase.from('profiles').upsert({
                   'id': res.user!.id, 
                   'email': email,
                   'full_name': name,
                   'phone': phone,
                   'accurate_customer_id': systemId,
-                  'approval_status': 'PENDING', 
-                  'is_profile_completed': false, 
+                  'approval_status': 'APPROVED',    // <-- Langsung ACC
+                  'is_profile_completed': false,    // <-- Profil dianggap belum lengkap
+                  'has_password': false,            // <-- Belum punya password
                 });
                 totalDiundang++;
                 print('   ✅ Sukses diundang.');

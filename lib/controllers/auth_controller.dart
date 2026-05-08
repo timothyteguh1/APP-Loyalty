@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,7 +9,7 @@ class AuthController {
   User? get currentUser => _supabase.auth.currentUser;
 
   // ============================================================
-  // FUNGSI DAFTAR (DENGAN EMAIL VERIFIKASI)
+  // FUNGSI DAFTAR (JALUR MANDIRI)
   // ============================================================
   Future<Map<String, dynamic>> signUp({
     required String email,
@@ -21,33 +20,26 @@ class AuthController {
     required String storeAddress,
     required String domisili,
     required String ktpNumber,
-    String? accurateCustomerId, 
-    Uint8List? ktpImageBytes,
-    String? ktpFileName,
+    String? accurateCustomerId,
   }) async {
     try {
-      final validAccurateId = (accurateCustomerId != null && accurateCustomerId.trim().isNotEmpty) 
-          ? accurateCustomerId.trim() 
+      final validAccurateId = (accurateCustomerId != null && accurateCustomerId.trim().isNotEmpty)
+          ? accurateCustomerId.trim()
           : null;
 
-      // [PERBAIKAN] Upload KTP terlebih dahulu sebelum sign up
-      String? ktpImageUrl;
-      if (ktpImageBytes != null && ktpFileName != null) {
-        final ext = ktpFileName.split('.').last;
-        final fileName = 'ktp_new_${DateTime.now().millisecondsSinceEpoch}.$ext';
-        try {
-          await _supabase.storage.from('upsol-assets').uploadBinary(
-                fileName, ktpImageBytes,
-                fileOptions: const FileOptions(upsert: true),
-              );
-          ktpImageUrl = _supabase.storage.from('upsol-assets').getPublicUrl(fileName);
-        } catch (e) {
-          throw 'Gagal mengunggah KTP: $e (Pastikan Storage Bucket mengizinkan Anon Insert)';
-        }
-      }
+      final AuthResponse res = await _supabase.auth.signUp(
+        email: email,
+        password: password,
+        data: {
+          'full_name': fullName,
+          'pic_name': picName,
+        },
+      );
 
-      // [PERBAIKAN] Gabungkan semua data, termasuk KTP URL ke metadata
-      final Map<String, dynamic> metadata = {
+      final user = res.user;
+      if (user == null) throw 'Gagal membuat akun. Coba lagi.';
+
+      await _supabase.from('profiles').update({
         'full_name': fullName,
         'pic_name': picName,
         'phone': phone,
@@ -55,26 +47,17 @@ class AuthController {
         'domisili': domisili,
         'ktp_number': ktpNumber,
         'accurate_customer_id': validAccurateId,
-      };
-      
-      if (ktpImageUrl != null) {
-        metadata['ktp_image_url'] = ktpImageUrl;
-      }
+        'email': email,           // [FIX] Simpan email di profiles agar bisa di-query langsung
+        'has_password': true,
+        'is_profile_completed': true,
+        'approval_status': 'PENDING',
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', user.id);
 
-      final AuthResponse res = await _supabase.auth.signUp(
-        email: email,
-        password: password,
-        data: metadata, // Data otomatis masuk tabel profile via trigger
-      );
-
-      if (res.user == null) {
-        throw 'Gagal membuat akun. Coba lagi.';
-      }
-
-      final String userId = res.user!.id;
+      final String userId = user.id;
       final bool needsEmailVerification = (res.session == null);
 
-      // ======= EMAIL NOTIFIKASI: Notify Admin tentang pendaftaran baru =======
+      // ======= EMAIL NOTIFIKASI ADMIN =======
       try {
         final adminConfig = await _supabase
             .from('app_config')
@@ -135,7 +118,7 @@ class AuthController {
   }
 
   // ============================================================
-  // LUPA PASSWORD — Kirim email reset
+  // LUPA PASSWORD
   // ============================================================
   Future<void> sendPasswordResetEmail({required String email}) async {
     try {
@@ -156,20 +139,70 @@ class AuthController {
   // ============================================================
   Future<void> signIn({required String identifier, required String password}) async {
     try {
-      String emailToLogin = identifier.trim();
+      String emailToLogin = identifier.trim().toLowerCase();
       final bool isPhone = _isPhoneNumber(identifier.trim());
 
       if (isPhone) {
+        // Login via nomor HP: cari email dari profiles.phone
         final result = await _supabase
-            .from('profiles').select('id').eq('phone', identifier.trim()).maybeSingle();
+            .from('profiles')
+            .select('id')
+            .eq('phone', identifier.trim())
+            .maybeSingle();
         if (result == null) throw 'Nomor HP tidak ditemukan. Pastikan sudah terdaftar.';
 
-        final emailResult = await _supabase.rpc('get_email_by_phone', params: {'phone_input': identifier.trim()});
-        if (emailResult == null || emailResult.toString().isEmpty) throw 'Nomor HP tidak terkait dengan akun manapun.';
+        final emailResult = await _supabase.rpc(
+          'get_email_by_phone',
+          params: {'phone_input': identifier.trim()},
+        );
+        if (emailResult == null || emailResult.toString().isEmpty) {
+          throw 'Nomor HP tidak terkait dengan akun manapun.';
+        }
         emailToLogin = emailResult.toString();
       }
 
-      await _supabase.auth.signInWithPassword(email: emailToLogin, password: password);
+      // ============================================================
+      // [FIX] Cek has_password sebelum mencoba signInWithPassword.
+      //
+      // Kasus: User dari Accurate yang sudah setup password via OTP
+      // tapi belum selesai edit profil, lalu logout dan coba login
+      // lagi. Mereka PUNYA password → boleh lanjut signInWithPassword.
+      //
+      // Kalau has_password = false → user belum pernah setup password
+      // → jangan coba login, lempar error khusus agar UI bisa redirect
+      // ke EmailEntryPage untuk kirim OTP ulang.
+      // ============================================================
+      final profileCheck = await _supabase
+          .from('profiles')
+          .select('has_password')
+          .eq('email', emailToLogin)
+          .maybeSingle();
+
+      // Kalau tidak ketemu via email kolom, coba via RPC (user Accurate lama)
+      bool hasPassword = profileCheck?['has_password'] == true;
+
+      if (!hasPassword && profileCheck == null) {
+        // Fallback: cek via auth email → profiles join
+        try {
+          final rpcResult = await _supabase.rpc(
+            'get_profile_by_auth_email',
+            params: {'email_input': emailToLogin},
+          );
+          if (rpcResult != null) {
+            hasPassword = rpcResult['has_password'] == true;
+          }
+        } catch (_) {}
+      }
+
+      if (!hasPassword) {
+        // User belum punya password → harusnya pakai OTP flow
+        throw 'NEEDS_OTP_LOGIN';
+      }
+
+      await _supabase.auth.signInWithPassword(
+        email: emailToLogin,
+        password: password,
+      );
     } on AuthException catch (e) {
       if (e.message.contains('Invalid login') || e.message.contains('invalid_credentials')) {
         throw 'Email/No HP atau Password salah. Cek lagi ya!';
@@ -190,10 +223,16 @@ class AuthController {
     final user = currentUser;
     if (user == null) return 'UNKNOWN';
     try {
-      final data = await _supabase.from('profiles').select('approval_status').eq('id', user.id).maybeSingle();
+      final data = await _supabase
+          .from('profiles')
+          .select('approval_status')
+          .eq('id', user.id)
+          .maybeSingle();
       if (data == null) return 'PENDING';
       return data['approval_status'] ?? 'PENDING';
-    } catch (e) { return 'PENDING'; }
+    } catch (e) {
+      return 'PENDING';
+    }
   }
 
   // ============================================================
@@ -203,40 +242,46 @@ class AuthController {
     final user = currentUser;
     if (user == null) return null;
     try {
-      return await _supabase.from('profiles').select().eq('id', user.id).maybeSingle();
-    } catch (e) { return null; }
+      return await _supabase
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+    } catch (e) {
+      return null;
+    }
   }
 
   // ============================================================
   // UPDATE PROFILE (setelah REJECTED)
   // ============================================================
   Future<void> updateProfileForResubmit({
-    required String fullName, required String picName,
-    required String phone, required String storeAddress,
-    required String domisili, required String ktpNumber,
-    Uint8List? ktpImageBytes, String? ktpFileName,
+    required String fullName,
+    required String picName,
+    required String phone,
+    required String storeAddress,
+    required String domisili,
+    required String ktpNumber,
+    Uint8List? ktpImageBytes,
+    String? ktpFileName,
   }) async {
     final user = currentUser;
     if (user == null) throw 'User tidak ditemukan';
     try {
-      String? ktpImageUrl;
-      if (ktpImageBytes != null && ktpFileName != null) {
-        final ext = ktpFileName.split('.').last;
-        final fileName = 'ktp_${user.id}_${DateTime.now().millisecondsSinceEpoch}.$ext';
-        await _supabase.storage.from('upsol-assets').uploadBinary(fileName, ktpImageBytes, fileOptions: const FileOptions(upsert: true));
-        ktpImageUrl = _supabase.storage.from('upsol-assets').getPublicUrl(fileName);
-      }
-
-      final updateData = <String, dynamic>{
-        'full_name': fullName, 'pic_name': picName, 'phone': phone,
-        'store_address': storeAddress, 'domisili': domisili, 'ktp_number': ktpNumber,
-        'approval_status': 'PENDING', 'rejection_reason': null,
+      await _supabase.from('profiles').update({
+        'full_name': fullName,
+        'pic_name': picName,
+        'phone': phone,
+        'store_address': storeAddress,
+        'domisili': domisili,
+        'ktp_number': ktpNumber,
+        'approval_status': 'PENDING',
+        'rejection_reason': null,
         'updated_at': DateTime.now().toIso8601String(),
-      };
-      if (ktpImageUrl != null) updateData['ktp_image_url'] = ktpImageUrl;
-
-      await _supabase.from('profiles').update(updateData).eq('id', user.id);
-    } catch (e) { throw 'Gagal memperbarui data: $e'; }
+      }).eq('id', user.id);
+    } catch (e) {
+      throw 'Gagal memperbarui data: $e';
+    }
   }
 
   // ============================================================

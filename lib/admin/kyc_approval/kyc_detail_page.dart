@@ -82,30 +82,6 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
     } finally { if (mounted) setState(() => _isProcessing = false); }
   }
 
-  Future<void> _deleteUser() async {
-    final confirm = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 20)), const SizedBox(width: 12), const Text('Hapus User', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18))]),
-      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('"${widget.store['full_name'] ?? '-'}" akan dihapus PERMANEN.', style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))), const SizedBox(height: 12),
-        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFFCA5A5))),
-          child: const Row(children: [Icon(Icons.warning_rounded, color: Color(0xFFEF4444), size: 16), SizedBox(width: 8), Expanded(child: Text('Semua data poin, riwayat, dan voucher user ini akan hilang selamanya.', style: TextStyle(fontSize: 12, color: Color(0xFFB91C1C), height: 1.4)))])),
-      ]),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal', style: TextStyle(color: Colors.grey))), ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), child: const Text('Ya, Hapus Permanen', style: TextStyle(color: Colors.white)))],
-    ));
-    if (confirm != true) return;
-    setState(() => _isProcessing = true);
-    try {
-      final result = await _admin.rpc('admin_delete_user', params: {'target_user_id': widget.store['id']});
-      if (!mounted) return;
-      if (result != null && result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'] ?? 'User berhasil dihapus'), backgroundColor: const Color(0xFF10B981), behavior: SnackBarBehavior.floating, margin: const EdgeInsets.all(20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
-        Navigator.pop(context, true);
-      } else { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result?['message'] ?? 'Gagal menghapus user'), backgroundColor: const Color(0xFFEF4444))); }
-    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e'), backgroundColor: const Color(0xFFEF4444))); }
-    finally { if (mounted) setState(() => _isProcessing = false); }
-  }
-
   Future<void> _resetUserPassword() async {
     final userId = widget.store['id'];
     String? userEmail;
@@ -155,7 +131,6 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
     final String phone = store['phone'] ?? '-';
     final String ktp = store['ktp_number'] ?? '-';
     final String status = store['approval_status'] ?? 'PENDING';
-    final String? ktpImageUrl = store['ktp_image_url'];
     final String? accurateId = store['accurate_customer_id'];
     final String domisili = store['domisili'] ?? store['domicile'] ?? '-';
     final int points = (store['points'] as num?)?.toInt() ?? 0;
@@ -194,7 +169,7 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
                     constraints: BoxConstraints(maxWidth: isDesktop ? 800 : double.infinity),
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-                      child: isDesktop ? _buildDesktopLayout(name, pic, address, phone, ktp, status, ktpImageUrl, accurateId, domisili, points, initial, statusColor, statusLabel, statusIcon) : _buildMobileLayout(name, pic, address, phone, ktp, status, ktpImageUrl, accurateId, domisili, points, initial, statusColor, statusLabel, statusIcon),
+                      child: isDesktop ? _buildDesktopLayout(name, pic, address, phone, ktp, status, accurateId, domisili, points, initial, statusColor, statusLabel, statusIcon) : _buildMobileLayout(name, pic, address, phone, ktp, status, accurateId, domisili, points, initial, statusColor, statusLabel, statusIcon),
                     ),
                   ),
                 ),
@@ -223,7 +198,7 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
   }
 
   // [BARU] Desktop layout — 2 kolom
-  Widget _buildDesktopLayout(String name, String pic, String address, String phone, String ktp, String status, String? ktpImageUrl, String? accurateId, String domisili, int points, String initial, Color statusColor, String statusLabel, IconData statusIcon) {
+  Widget _buildDesktopLayout(String name, String pic, String address, String phone, String ktp, String status, String? accurateId, String domisili, int points, String initial, Color statusColor, String statusLabel, IconData statusIcon) {
     return Column(children: [
       // Profile card
       _buildProfileCard(name, initial, statusColor, statusLabel, statusIcon, points),
@@ -244,17 +219,13 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
         ])),
         const SizedBox(width: 16),
         // Right: KTP
-        Expanded(child: Column(children: [
-          _buildSection('Dokumen KYC', [_infoRow(Icons.badge_outlined, 'No. KTP', ktp)]),
-          const SizedBox(height: 12),
-          _buildKtpImage(ktpImageUrl),
-        ])),
+        Expanded(child: _buildSection('Dokumen KYC', [_infoRow(Icons.badge_outlined, 'No. KTP', ktp)])),
       ]),
     ]);
   }
 
   // Mobile layout — single column (original)
-  Widget _buildMobileLayout(String name, String pic, String address, String phone, String ktp, String status, String? ktpImageUrl, String? accurateId, String domisili, int points, String initial, Color statusColor, String statusLabel, IconData statusIcon) {
+  Widget _buildMobileLayout(String name, String pic, String address, String phone, String ktp, String status, String? accurateId, String domisili, int points, String initial, Color statusColor, String statusLabel, IconData statusIcon) {
     return Column(children: [
       _buildProfileCard(name, initial, statusColor, statusLabel, statusIcon, points),
       const SizedBox(height: 16),
@@ -267,8 +238,6 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
       ]),
       const SizedBox(height: 16),
       _buildSection('Dokumen KYC', [_infoRow(Icons.badge_outlined, 'No. KTP', ktp)]),
-      const SizedBox(height: 12),
-      _buildKtpImage(ktpImageUrl),
       const SizedBox(height: 20),
       _buildSection('Admin Tools', [_buildAdminTools()]),
     ]);
@@ -295,26 +264,9 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
         child: Container(padding: const EdgeInsets.all(14), margin: const EdgeInsets.only(bottom: 10), decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFFDE68A))),
           child: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.lock_reset_rounded, color: Color(0xFFF59E0B), size: 20)), const SizedBox(width: 12),
             const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Set Password Baru', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF92400E))), Text('Admin langsung tentukan password baru user', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280)))])), const Icon(Icons.chevron_right_rounded, color: Color(0xFFF59E0B), size: 20)]))),
-      GestureDetector(onTap: _isProcessing ? null : _deleteUser,
-        child: Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFFCA5A5))),
-          child: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFEF4444).withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 20)), const SizedBox(width: 12),
-            const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('Hapus User Permanen', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFFB91C1C))), Text('Hapus semua data user ini selamanya', style: TextStyle(fontSize: 11, color: Color(0xFF6B7280)))])), const Icon(Icons.chevron_right_rounded, color: Color(0xFFEF4444), size: 20)]))),
     ]);
   }
 
-  Widget _buildKtpImage(String? ktpImageUrl) {
-    if (ktpImageUrl != null && ktpImageUrl.isNotEmpty) {
-      return GestureDetector(onTap: () => _showFullImage(context, ktpImageUrl),
-        child: Container(width: double.infinity, height: 200, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF0F0F0))),
-          child: ClipRRect(borderRadius: BorderRadius.circular(16),
-            child: Stack(fit: StackFit.expand, children: [
-              Image.network(ktpImageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.broken_image_rounded, size: 32, color: Color(0xFF9CA3AF)), SizedBox(height: 8), Text('Gagal memuat foto', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 12))]))),
-              Positioned(bottom: 8, right: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), borderRadius: BorderRadius.circular(8)), child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.zoom_in_rounded, color: Colors.white, size: 14), SizedBox(width: 4), Text('Tap untuk perbesar', style: TextStyle(color: Colors.white, fontSize: 11))]))),
-            ]))));
-    }
-    return Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 32), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF0F0F0))),
-      child: const Column(children: [Icon(Icons.image_not_supported_rounded, size: 36, color: Color(0xFFD1D5DB)), SizedBox(height: 8), Text('Foto KTP belum diupload', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13))]));
-  }
 
   Widget _buildSection(String title, List<Widget> children) {
     return Container(width: double.infinity, padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF0F0F0))),
@@ -329,21 +281,8 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
     ]));
   }
 
-  void _showFullImage(BuildContext context, String url) {
-    Navigator.push(context, PageRouteBuilder(opaque: false, pageBuilder: (_, __, ___) => _FullImageView(url: url), transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child), transitionDuration: const Duration(milliseconds: 250)));
-  }
 }
 
-class _FullImageView extends StatelessWidget {
-  final String url;
-  const _FullImageView({required this.url});
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(backgroundColor: Colors.black87,
-      appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0, leading: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close_rounded, color: Colors.white)), title: const Text('Foto KTP', style: TextStyle(color: Colors.white, fontSize: 16))),
-      body: Center(child: InteractiveViewer(minScale: 0.5, maxScale: 4.0, child: Image.network(url, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white54, size: 48)))));
-  }
-}
 
 class _SuccessDialog extends StatefulWidget {
   final bool isApproved; final String userName;

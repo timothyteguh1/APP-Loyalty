@@ -48,8 +48,7 @@ class _EmailEntryPageState extends State<EmailEntryPage>
         Tween<Offset>(begin: const Offset(0, 0.25), end: Offset.zero).animate(
             CurvedAnimation(
                 parent: _formAnimController,
-                curve: const Interval(0.3, 0.7,
-                    curve: Curves.easeOutCubic)));
+                curve: const Interval(0.3, 0.7, curve: Curves.easeOutCubic)));
     _cardFade = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
         parent: _formAnimController,
         curve: const Interval(0.3, 0.7, curve: Curves.easeOut)));
@@ -73,7 +72,7 @@ class _EmailEntryPageState extends State<EmailEntryPage>
 
   Future<void> _checkEmail() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    final email = _emailController.text.trim();
+    final email = _emailController.text.trim().toLowerCase();
     if (email.isEmpty || !email.contains('@')) {
       _showSnack('Masukkan alamat email yang valid!', Colors.red);
       return;
@@ -82,40 +81,101 @@ class _EmailEntryPageState extends State<EmailEntryPage>
     setState(() => _isLoading = true);
 
     try {
-      final response = await _supabase
+      // ============================================================
+      // [FIX UTAMA]
+      // Masalah lama: query .eq('email', email) gagal karena kolom
+      // `profiles.email` bisa NULL untuk user yang dibuat dari Accurate.
+      //
+      // Solusi: Gunakan RPC `get_profile_by_email` yang mencari via
+      // auth.users (tabel internal Supabase) lalu JOIN ke profiles.
+      // Jika RPC belum ada, fallback ke cek `auth.users` lewat
+      // signInWithOtp (Supabase akan tetap kirim OTP meski user ada).
+      //
+      // STRATEGI: Kita coba query profiles dengan email dulu.
+      // Kalau tidak ketemu, kita cek via RPC khusus yang lookup
+      // berdasarkan auth.users.email → lalu ambil profile dari id-nya.
+      // ============================================================
+
+      Map<String, dynamic>? profile;
+
+      // Langkah 1: Coba query profiles.email langsung (untuk user mandiri
+      // yang email-nya sudah tersimpan di kolom profiles.email)
+      final directResult = await _supabase
           .from('profiles')
-          .select('id, approval_status, is_profile_completed')
+          .select('id, approval_status, is_profile_completed, has_password, email')
           .eq('email', email)
           .maybeSingle();
 
+      if (directResult != null) {
+        profile = directResult;
+      } else {
+        // Langkah 2: Email tidak ada di kolom profiles.email (kasus user Accurate)
+        // Gunakan RPC untuk lookup via auth.users
+        // RPC ini perlu dibuat di Supabase: lihat komentar di bawah
+        try {
+          final rpcResult = await _supabase.rpc(
+            'get_profile_by_auth_email',
+            params: {'email_input': email},
+          );
+          if (rpcResult != null) {
+            profile = Map<String, dynamic>.from(rpcResult);
+          }
+        } catch (_) {
+          // RPC belum ada, lanjut ke logika di bawah
+          profile = null;
+        }
+      }
+
       if (!mounted) return;
 
-      if (response == null) {
-        _showSnack('Akun belum terdaftar. Silakan buat akun baru.',
-            Colors.blueAccent);
+      if (profile == null) {
+        // Email tidak ditemukan sama sekali → arahkan ke Register
+        _showSnack(
+            'Akun belum terdaftar. Silakan buat akun baru.', Colors.blueAccent);
         Navigator.push(context,
             MaterialPageRoute(builder: (context) => const RegisterPage()));
       } else {
-        final isCompleted = response['is_profile_completed'] == true;
-        final status = response['approval_status'];
+        final bool hasPassword = profile['has_password'] == true;
+        final bool isCompleted = profile['is_profile_completed'] == true;
+        final String status = profile['approval_status'] ?? 'PENDING';
 
-        if (status == 'PENDING' && !isCompleted) {
+        // ============================================================
+        // DECISION TREE:
+        //
+        // has_password = FALSE → User dari Accurate (belum setup password)
+        //   → Kirim OTP → Login session → _SetupPasswordPage (di main.dart)
+        //
+        // has_password = TRUE → User mandiri atau Accurate yang sudah setup
+        //   → Ke LoginPage dengan email prefilled
+        // ============================================================
+        if (!hasPassword) {
+          // User dari Accurate — belum punya password sama sekali
           _showSnack(
-              'Akun dari Accurate ditemukan! Mengirim kode OTP ke email Anda...',
-              const Color(0xFF10B981));
+            'Akun ditemukan! Mengirim kode verifikasi ke email Anda...',
+            const Color(0xFF10B981),
+          );
           await _supabase.auth.signInWithOtp(email: email);
           if (mounted) {
-            Navigator.push(context,
-                MaterialPageRoute(builder: (context) => OtpPage(email: email)));
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => OtpPage(email: email)),
+            );
           }
         } else {
-          _showSnack('Akun aktif ditemukan. Silakan login.', Colors.blueAccent);
-          Navigator.push(context,
-              MaterialPageRoute(builder: (context) => const LoginPage()));
+          // User mandiri / sudah punya password → ke halaman login biasa
+          _showSnack('Akun ditemukan. Silakan login.', Colors.blueAccent);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => LoginPage(initialEmail: email),
+            ),
+          );
         }
       }
     } catch (e) {
-      _showSnack('Terjadi kesalahan: $e', Colors.red);
+      if (mounted) {
+        _showSnack('Terjadi kesalahan: $e', Colors.red);
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -192,192 +252,163 @@ class _EmailEntryPageState extends State<EmailEntryPage>
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 28),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 500),
+                constraints: const BoxConstraints(maxWidth: 480),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const SizedBox(height: 50),
+                    const SizedBox(height: 60),
 
                     // Logo
                     ScaleTransition(
                       scale: _logoScale,
                       child: Container(
-                        width: 88,
-                        height: 88,
+                        width: 90,
+                        height: 90,
                         decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(26),
-                            boxShadow: [
-                              BoxShadow(
-                                  color: Colors.black.withOpacity(0.15),
-                                  blurRadius: 30,
-                                  offset: const Offset(0, 10))
-                            ]),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(26),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.25),
+                              blurRadius: 40,
+                              offset: const Offset(0, 15),
+                            ),
+                          ],
+                        ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(26),
                           child: Image.asset(
                             'assets/images/logo.png',
-                            fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => const Center(
-                                child: Text('U',
-                                    style: TextStyle(
-                                        fontSize: 40,
-                                        fontWeight: FontWeight.w900,
-                                        color: Color(0xFF1A2744)))),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.star_rounded,
+                              size: 44,
+                              color: Color(0xFFD32F2F),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
 
                     // Title
                     FadeTransition(
                       opacity: _titleFade,
-                      child: Column(children: [
-                        const Text('BKA Loyalty',
+                      child: const Column(children: [
+                        Text('BKA Loyalty',
                             style: TextStyle(
                                 fontSize: 28,
                                 fontWeight: FontWeight.w800,
                                 color: Colors.white,
                                 letterSpacing: -0.5)),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 6),
-                          decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                  color: Colors.white.withOpacity(0.1))),
-                          child: const Text('Program Loyalti Toko',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.white70,
-                                  fontWeight: FontWeight.w500)),
-                        ),
+                        SizedBox(height: 6),
+                        Text('Program Loyalti Toko',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.white54,
+                                letterSpacing: 0.5)),
                       ]),
                     ),
                     const SizedBox(height: 36),
 
                     // Card
-                    SlideTransition(
-                      position: _cardSlide,
-                      child: FadeTransition(
-                        opacity: _cardFade,
+                    FadeTransition(
+                      opacity: _cardFade,
+                      child: SlideTransition(
+                        position: _cardSlide,
                         child: Container(
                           padding: const EdgeInsets.all(28),
                           decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(28),
-                              boxShadow: [
-                                BoxShadow(
-                                    color: Colors.black.withOpacity(0.1),
-                                    blurRadius: 40,
-                                    offset: const Offset(0, 15))
-                              ]),
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(28),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.18),
+                                blurRadius: 50,
+                                offset: const Offset(0, 20),
+                              ),
+                            ],
+                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(children: [
                                 Container(
-                                    width: 4,
-                                    height: 24,
-                                    decoration: BoxDecoration(
-                                        color: const Color(0xFF1A2744),
-                                        borderRadius:
-                                            BorderRadius.circular(2))),
+                                  width: 4,
+                                  height: 22,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFB71C1C),
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
                                 const SizedBox(width: 10),
-                                const Text('Selamat Datang',
+                                const Text('Masuk ke Akun',
                                     style: TextStyle(
-                                        fontSize: 18,
+                                        fontSize: 20,
                                         fontWeight: FontWeight.w700,
                                         color: Color(0xFF1A1A2E))),
                               ]),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 6),
                               Padding(
-                                padding:
-                                    const EdgeInsets.only(left: 14),
+                                padding: const EdgeInsets.only(left: 14),
                                 child: Text(
-                                    'Masukkan email Anda untuk melanjutkan',
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.grey[500])),
+                                  'Masukkan email untuk melanjutkan',
+                                  style: TextStyle(
+                                      fontSize: 13, color: Colors.grey[500]),
+                                ),
                               ),
                               const SizedBox(height: 24),
-
-                              // Email field
                               _buildEmailField(),
-
-                              const SizedBox(height: 28),
-
-                              // Button
+                              const SizedBox(height: 24),
                               ScaleTransition(
                                 scale: _btnScale,
                                 child: SizedBox(
                                   width: double.infinity,
-                                  height: 54,
+                                  height: 52,
                                   child: ElevatedButton(
-                                    onPressed:
-                                        _isLoading ? null : _checkEmail,
+                                    onPressed: _isLoading ? null : _checkEmail,
                                     style: ElevatedButton.styleFrom(
-                                        backgroundColor:
-                                            const Color(0xFF1A2744),
-                                        foregroundColor: Colors.white,
-                                        disabledBackgroundColor:
-                                            const Color(0xFF1A2744)
-                                                .withOpacity(0.6),
-                                        elevation: 0,
-                                        shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(
-                                                    16))),
-                                    child: AnimatedSwitcher(
-                                      duration: const Duration(
-                                          milliseconds: 200),
-                                      child: _isLoading
-                                          ? Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .center,
-                                              children: [
-                                                  SizedBox(
-                                                      width: 20,
-                                                      height: 20,
-                                                      child: CircularProgressIndicator(
-                                                          color: Colors
-                                                              .white
-                                                              .withOpacity(
-                                                                  0.9),
-                                                          strokeWidth:
-                                                              2.5)),
-                                                  const SizedBox(
-                                                      width: 12),
-                                                  const Text(
-                                                      'Memeriksa...',
-                                                      style: TextStyle(
-                                                          fontSize: 15,
-                                                          fontWeight:
-                                                              FontWeight
-                                                                  .w600)),
-                                                ])
-                                          : const Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .center,
-                                              children: [
-                                                  Text('Lanjutkan',
-                                                      style: TextStyle(
-                                                          fontSize: 16,
-                                                          fontWeight:
-                                                              FontWeight
-                                                                  .w600)),
-                                                  SizedBox(width: 8),
-                                                  Icon(
-                                                      Icons
-                                                          .arrow_forward_rounded,
-                                                      size: 20),
-                                                ]),
+                                      backgroundColor: const Color(0xFFB71C1C),
+                                      foregroundColor: Colors.white,
+                                      disabledBackgroundColor:
+                                          const Color(0xFFB71C1C).withOpacity(0.5),
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(16)),
                                     ),
+                                    child: _isLoading
+                                        ? Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child: CircularProgressIndicator(
+                                                      color: Colors.white
+                                                          .withOpacity(0.9),
+                                                      strokeWidth: 2.5)),
+                                              const SizedBox(width: 12),
+                                              const Text('Memeriksa...',
+                                                  style: TextStyle(
+                                                      fontSize: 15,
+                                                      fontWeight:
+                                                          FontWeight.w600)),
+                                            ])
+                                        : const Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                                Text('Lanjutkan',
+                                                    style: TextStyle(
+                                                        fontSize: 16,
+                                                        fontWeight:
+                                                            FontWeight.w600)),
+                                                SizedBox(width: 8),
+                                                Icon(
+                                                    Icons.arrow_forward_rounded,
+                                                    size: 20),
+                                              ]),
                                   ),
                                 ),
                               ),
@@ -396,8 +427,7 @@ class _EmailEntryPageState extends State<EmailEntryPage>
                         onTap: () => Navigator.push(
                             context,
                             PageRouteBuilder(
-                              pageBuilder: (_, a, __) =>
-                                  const RegisterPage(),
+                              pageBuilder: (_, a, __) => const RegisterPage(),
                               transitionsBuilder: (_, a, __, c) =>
                                   SlideTransition(
                                       position: Tween<Offset>(
@@ -405,8 +435,7 @@ class _EmailEntryPageState extends State<EmailEntryPage>
                                               end: Offset.zero)
                                           .animate(CurvedAnimation(
                                               parent: a,
-                                              curve:
-                                                  Curves.easeOutCubic)),
+                                              curve: Curves.easeOutCubic)),
                                       child: c),
                               transitionDuration:
                                   const Duration(milliseconds: 400),
@@ -418,15 +447,13 @@ class _EmailEntryPageState extends State<EmailEntryPage>
                               color: Colors.white.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                  color:
-                                      Colors.white.withOpacity(0.15))),
+                                  color: Colors.white.withOpacity(0.15))),
                           child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text('Belum punya akun?',
                                     style: TextStyle(
-                                        color:
-                                            Colors.white.withOpacity(0.7),
+                                        color: Colors.white.withOpacity(0.7),
                                         fontSize: 13)),
                                 const SizedBox(width: 6),
                                 const Text('Daftar Sekarang',

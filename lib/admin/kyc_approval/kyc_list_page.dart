@@ -38,6 +38,65 @@ class _KycListPageState extends State<KycListPage> with SingleTickerProviderStat
     super.dispose();
   }
 
+
+  Future<void> _deleteUser(Map<String, dynamic> store) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 20)),
+          const SizedBox(width: 12),
+          const Text('Hapus User', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+        ]),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('"${store['full_name'] ?? '-'}" akan dihapus PERMANEN.', style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFFCA5A5))),
+            child: const Row(children: [
+              Icon(Icons.warning_rounded, color: Color(0xFFEF4444), size: 16),
+              SizedBox(width: 8),
+              Expanded(child: Text('Semua data poin, riwayat, dan voucher user ini akan hilang selamanya.', style: TextStyle(fontSize: 12, color: Color(0xFFB91C1C), height: 1.4))),
+            ]),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0),
+            child: const Text('Ya, Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      final result = await _admin.rpc('admin_delete_user', params: {'target_user_id': store['id']});
+      if (!mounted) return;
+      if (result != null && result['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result['message'] ?? 'User berhasil dihapus'),
+          backgroundColor: const Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(20),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+        _fetchProfiles();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(result?['message'] ?? 'Gagal menghapus user'),
+          backgroundColor: const Color(0xFFEF4444),
+        ));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e'), backgroundColor: const Color(0xFFEF4444)));
+    }
+  }
+
   Future<void> _fetchProfiles() async {
     setState(() => _isLoading = true);
     try {
@@ -234,6 +293,7 @@ class _KycListPageState extends State<KycListPage> with SingleTickerProviderStat
                   store: list[index],
                   index: index,
                   onTap: () => _openDetail(list[index]),
+                  onDelete: () => _deleteUser(list[index]),
                 );
               },
             ),
@@ -311,17 +371,30 @@ class _KycListPageState extends State<KycListPage> with SingleTickerProviderStat
                         )
                       ),
                       DataCell(
-                        ElevatedButton.icon(
-                          onPressed: () => _openDetail(store),
-                          icon: const Icon(Icons.visibility_rounded, size: 16),
-                          label: const Text('Review', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFF3F4F6),
-                            foregroundColor: const Color(0xFF1A1A2E),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        Row(mainAxisSize: MainAxisSize.min, children: [
+                          ElevatedButton.icon(
+                            onPressed: () => _openDetail(store),
+                            icon: const Icon(Icons.visibility_rounded, size: 16),
+                            label: const Text('Review', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFF3F4F6),
+                              foregroundColor: const Color(0xFF1A1A2E),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
                           ),
-                        )
+                          const SizedBox(width: 8),
+                          IconButton(
+                            onPressed: () => _deleteUser(store),
+                            icon: const Icon(Icons.delete_forever_rounded, size: 20),
+                            color: const Color(0xFFEF4444),
+                            tooltip: 'Hapus User',
+                            style: IconButton.styleFrom(
+                              backgroundColor: const Color(0xFFFEF2F2),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ])
                       ),
                     ]
                   );
@@ -387,8 +460,9 @@ class _StoreCard extends StatelessWidget {
   final Map<String, dynamic> store;
   final int index;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
 
-  const _StoreCard({required this.store, required this.index, required this.onTap});
+  const _StoreCard({required this.store, required this.index, required this.onTap, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -470,6 +544,15 @@ class _StoreCard extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: statusBg, borderRadius: BorderRadius.circular(8)), child: Icon(statusIcon, color: statusColor, size: 18)),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: onDelete,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 18),
+                ),
+              ),
               const SizedBox(width: 4),
               Icon(Icons.chevron_right_rounded, color: Colors.grey[300], size: 20),
             ],
