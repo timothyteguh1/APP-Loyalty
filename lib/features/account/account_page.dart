@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart'; 
 import '../../controllers/auth_controller.dart';
-import '../../utils/layout_state.dart'; // <-- IMPORT GLOBAL STATE
 import 'edit_profile_page.dart';
 import 'help_center_page.dart'; 
 import 'privacy_policy_page.dart';
@@ -82,49 +81,45 @@ class _AccountPageState extends State<AccountPage> {
     final String? avatarUrl = user?.userMetadata?['avatar_url'];
     final bool hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
 
-    // Mendengarkan perubahan mode (Web vs Mobile)
-    return ValueListenableBuilder<bool>(
-      valueListenable: LayoutState().isDesktopMode,
-      builder: (context, isDesktop, child) {
-        return Container(
-          color: const Color(0xFFF5F5F5),
-          // [PERBAIKAN] Stack digunakan pada level tertinggi agar warna merah menempel penuh ke atas
-          child: Stack(
-            children: [
-              // HEADER MERAH (Dibuat lebih tinggi agar menutupi area kosong atas)
-              Positioned(
-                top: 0, left: 0, right: 0, 
-                height: 280, // Tambah tinggi sedikit untuk menutupi status bar
-                child: Container(
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFD32F2F),
-                    borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(30),
-                      bottomRight: Radius.circular(30),
-                    ),
-                  ),
-                ),
-              ),
+    // [PERBAIKAN] Deteksi lebar layar otomatis tanpa LayoutState
+    final bool isDesktop = MediaQuery.of(context).size.width >= 850;
 
-              // KONTEN UTAMA SCROLLABLE
-              Positioned.fill(
-                child: SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  // [RESPONSIVE] Jika desktop, beri batasan lebar 800px di tengah
-                  child: isDesktop 
-                      ? Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 800),
-                            child: _buildAccountContent(name, email, hasAvatar, avatarUrl),
-                          ),
-                        )
-                      : _buildAccountContent(name, email, hasAvatar, avatarUrl),
+    return Container(
+      color: const Color(0xFFF5F5F5),
+      child: Stack(
+        children: [
+          // HEADER MERAH (Dibuat lebih tinggi agar menutupi area kosong atas)
+          Positioned(
+            top: 0, left: 0, right: 0, 
+            height: 280, // Tambah tinggi sedikit untuk menutupi status bar
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFD32F2F),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(30),
+                  bottomRight: Radius.circular(30),
                 ),
               ),
-            ],
+            ),
           ),
-        );
-      }
+
+          // KONTEN UTAMA SCROLLABLE
+          Positioned.fill(
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              // [RESPONSIVE] Jika desktop, beri batasan lebar 800px di tengah
+              child: isDesktop 
+                  ? Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 800),
+                        child: _buildAccountContent(name, email, hasAvatar, avatarUrl),
+                      ),
+                    )
+                  : _buildAccountContent(name, email, hasAvatar, avatarUrl),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -7,7 +7,7 @@ import '../../controllers/auth_controller.dart';
 import '../account/account_page.dart';
 import '../reward/detail_reward_page.dart';
 import '../../utils/ui_helpers.dart';
-import '../../utils/layout_state.dart';
+import '../../utils/responsive_layout.dart'; // <-- Import Responsive Layout yang baru
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -66,7 +66,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // [REVISI] Best deals sekarang query dari is_best_deal = true
   Future<void> _fetchBestDeals() async {
     try {
       final data = await _supabase.from('rewards').select()
@@ -106,16 +105,14 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: LayoutState().isDesktopMode,
-      builder: (context, isDesktop, child) {
-        if (isDesktop) { return _buildDesktopLayout(); } else { return _buildMobileLayout(); }
-      },
+    // [PERBAIKAN] Menggunakan ResponsiveLayout otomatis
+    return ResponsiveLayout(
+      mobile: _buildMobileLayout(),
+      desktop: _buildDesktopLayout(),
     );
   }
 
   // ===== MOBILE LAYOUT =====
-  // [REVISI] Hapus FAB scan QR, reorder nav items
   Widget _buildMobileLayout() {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -148,7 +145,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ===== DESKTOP LAYOUT =====
-  // [REVISI] Hapus scan QR button dari sidebar
   Widget _buildDesktopLayout() {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -163,17 +159,7 @@ class _HomePageState extends State<HomePage> {
             _buildNavItemWeb(icon: Icons.card_giftcard, label: "Katalog Reward", index: 1),
             _buildNavItemWeb(icon: Icons.history_outlined, label: "Riwayat Transaksi", index: 2),
             _buildNavItemWeb(icon: Icons.person_outline, label: "Pengaturan Akun", index: 3),
-            const Spacer(),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: OutlinedButton.icon(
-                onPressed: () => LayoutState().toggleMode(),
-                icon: const Icon(Icons.phone_android),
-                label: const Text("Beralih ke Mode HP"),
-                style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 45), foregroundColor: Colors.grey[700], side: BorderSide(color: Colors.grey[300]!)),
-              ),
-            ),
-            const SizedBox(height: 24),
+            // Tombol "Beralih Mode" sudah dihapus
           ]),
         ),
         Expanded(child: _buildBody(true)),
@@ -222,15 +208,7 @@ class _HomePageState extends State<HomePage> {
                     final name = user?.userMetadata?['full_name'] ?? 'User BKA';
                     return Text("Selamat datang, $name", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500));
                   }),
-                  if (!LayoutState().isDesktopMode.value)
-                    InkWell(
-                      onTap: () => LayoutState().toggleMode(),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
-                        child: const Row(children: [Icon(Icons.computer, color: Colors.white, size: 16), SizedBox(width: 6), Text("Mode Web", style: TextStyle(color: Colors.white, fontSize: 12))]),
-                      ),
-                    ),
+                  // Tombol "Beralih Mode" sudah dihapus
                 ]),
               ]),
             ),
@@ -264,7 +242,6 @@ class _HomePageState extends State<HomePage> {
                     ]);
                   }),
                   const SizedBox(height: 16), const Divider(), const SizedBox(height: 12),
-                  // [REVISI] Hanya tampilkan poin, tanpa tombol Redeem
                   Row(children: [
                     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text("Poin anda saat ini", style: TextStyle(color: Colors.grey[600], fontSize: 18)),
@@ -328,7 +305,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // [REVISI] Best deal card — tampilkan NAMA (title), bukan deskripsi
   Widget _buildBestDealCard(Map<String, dynamic> item) {
     return GestureDetector(
       onTap: () => navigateTo(context, DetailRewardPage(item: item)),
@@ -351,7 +327,6 @@ class _HomePageState extends State<HomePage> {
             ),
           ]),
           const SizedBox(height: 12),
-          // [REVISI] Tampilkan NAMA, bukan deskripsi
           Text(item['name'] ?? '-', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, height: 1.3), maxLines: 2, overflow: TextOverflow.ellipsis),
           if (item['description'] != null && item['description'].toString().isNotEmpty) ...[
             const SizedBox(height: 4),

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../utils/ui_helpers.dart';
-import '../../utils/layout_state.dart';
 import 'reward_list_page.dart';
 import 'detail_reward_page.dart';
 
@@ -43,7 +42,6 @@ class _RewardPageState extends State<RewardPage> {
     }
   }
 
-  // [REVISI] Best deals query dari is_best_deal flag
   Future<void> _fetchBestDeals() async {
     try {
       final data = await _supabase.from('rewards').select()
@@ -63,18 +61,15 @@ class _RewardPageState extends State<RewardPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<bool>(
-      valueListenable: LayoutState().isDesktopMode,
-      builder: (context, isDesktop, child) {
-        return Scaffold(
-          backgroundColor: const Color(0xFFF5F5F5),
-          body: RefreshIndicator(
-            color: const Color(0xFFD32F2F),
-            onRefresh: _fetchAll,
-            child: isDesktop ? Center(child: _buildContent(isDesktop: true)) : _buildContent(isDesktop: false),
-          ),
-        );
-      },
+    final bool isDesktop = MediaQuery.of(context).size.width >= 850;
+    
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: RefreshIndicator(
+        color: const Color(0xFFD32F2F),
+        onRefresh: _fetchAll,
+        child: isDesktop ? Center(child: _buildContent(isDesktop: true)) : _buildContent(isDesktop: false),
+      ),
     );
   }
 
@@ -85,7 +80,6 @@ class _RewardPageState extends State<RewardPage> {
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: isDesktop ? 800 : double.infinity),
         child: Column(children: [
-          // Header & Poin Card
           Stack(clipBehavior: Clip.none, children: [
             Container(
               height: 200, width: double.infinity,
@@ -123,8 +117,6 @@ class _RewardPageState extends State<RewardPage> {
             ),
           ]),
           const SizedBox(height: 90),
-
-          // [REVISI] Katalog Reward (Voucher & Produk) — tombol redeem dipindah ke sini
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -144,8 +136,6 @@ class _RewardPageState extends State<RewardPage> {
             ]),
           ),
           const SizedBox(height: 30),
-
-         // Best Deal
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -155,11 +145,10 @@ class _RewardPageState extends State<RewardPage> {
                   ? Container(width: double.infinity, padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), child: const Center(child: CircularProgressIndicator(color: Color(0xFFD32F2F))))
                   : _bestDeals.isEmpty
                       ? Container(width: double.infinity, padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), child: const Text("Nantikan promo menarik segera!", style: TextStyle(color: Colors.grey)))
-                      // [REVISI] Melakukan "looping" ke semua data yang didapat dari database
                       : Column(
                           children: _bestDeals.map((item) {
                             return Padding(
-                              padding: const EdgeInsets.only(bottom: 12), // Jarak antar card
+                              padding: const EdgeInsets.only(bottom: 12),
                               child: _dealCard(item),
                             );
                           }).toList(),
@@ -171,12 +160,11 @@ class _RewardPageState extends State<RewardPage> {
     );
   }
 
-  // [REVISI] Fokus Best Deal: Tampilkan dinamis dan ganti nama menjadi Bintang Kemenangan Abadi
   Widget _dealCard(Map<String, dynamic> item) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white, // Ganti jadi Color(0xFF1E1E1E) jika nanti jadi pakai tema gelap
+        color: Colors.white, 
         borderRadius: BorderRadius.circular(20), 
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 15, offset: const Offset(0, 5))]
       ),
@@ -184,13 +172,8 @@ class _RewardPageState extends State<RewardPage> {
         Row(children: [
           Image.asset('assets/images/logo.png', height: 20, errorBuilder: (c, e, s) => const Icon(Icons.local_offer, color: Colors.red, size: 20)),
           const SizedBox(width: 8),
-          
-          // [REVISI 1] Mengganti tulisan statis UPSOL OFFICIAL
           const Text("BINTANG KEMENANGAN ABADI", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-          
           const Spacer(),
-          
-          // [TAMBAHAN] Menampilkan tag "Voucher" atau "Produk" secara dinamis
           if (item['type'] != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -199,21 +182,16 @@ class _RewardPageState extends State<RewardPage> {
             ),
         ]),
         const SizedBox(height: 12),
-        
-        // [REVISI 2] Memastikan Nama Promo / Item yang tampil adalah yang dipilih di database
         Text(item['name'] ?? 'Promo Spesial', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, height: 1.3), maxLines: 2, overflow: TextOverflow.ellipsis),
-        
         if (item['description'] != null && item['description'].toString().isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(item['description'], style: TextStyle(fontSize: 12, color: Colors.grey[600]), maxLines: 1, overflow: TextOverflow.ellipsis),
         ],
         const SizedBox(height: 20), const Divider(height: 1), const SizedBox(height: 16),
-        
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Row(children: [
             Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: Colors.amber[50], shape: BoxShape.circle), child: const Icon(Icons.stars, color: Colors.amber, size: 18)),
             const SizedBox(width: 8),
-            // Menampilkan harga poin secara dinamis
             Text("${item['points_required'] ?? 0}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
           ]),
           ElevatedButton(

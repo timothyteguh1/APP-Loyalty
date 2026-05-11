@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../utils/ui_helpers.dart';
 import '../../utils/email_notification_service.dart';
-import '../../utils/layout_state.dart';
 
 class DetailRewardPage extends StatefulWidget {
   final Map<String, dynamic> item;
@@ -51,17 +50,13 @@ class _DetailRewardPageState extends State<DetailRewardPage> {
 
   @override
   Widget build(BuildContext context) {
-    // [FIX] Tambah web mode
-    return ValueListenableBuilder<bool>(
-      valueListenable: LayoutState().isDesktopMode,
-      builder: (context, isDesktop, _) {
-        return Scaffold(
-          backgroundColor: const Color(0xFFF5F5F5),
-          body: isDesktop
-              ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 800), child: _buildContent()))
-              : _buildContent(),
-        );
-      },
+    final bool isDesktop = MediaQuery.of(context).size.width >= 850;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: isDesktop
+          ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 800), child: _buildContent()))
+          : _buildContent(),
     );
   }
 

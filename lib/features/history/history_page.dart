@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../utils/layout_state.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -51,16 +50,13 @@ class _HistoryPageState extends State<HistoryPage> {
   @override
   Widget build(BuildContext context) {
     final user = _supabase.auth.currentUser;
-    return ValueListenableBuilder<bool>(
-      valueListenable: LayoutState().isDesktopMode,
-      builder: (context, isDesktop, child) {
-        return Scaffold(
-          backgroundColor: const Color(0xFFF5F5F5),
-          body: isDesktop
-              ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 800), child: _buildMainContent(user)))
-              : _buildMainContent(user),
-        );
-      },
+    final bool isDesktop = MediaQuery.of(context).size.width >= 850;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: isDesktop
+          ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 800), child: _buildMainContent(user)))
+          : _buildMainContent(user),
     );
   }
 
@@ -155,9 +151,6 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 }
 
-// =========================================================================
-// [REVISI] DETAIL VOUCHER — Tanpa kode unik, status-based
-// =========================================================================
 class ClaimedRewardDetailPage extends StatelessWidget {
   final Map<String, dynamic> data;
   const ClaimedRewardDetailPage({super.key, required this.data});
@@ -194,16 +187,13 @@ class ClaimedRewardDetailPage extends StatelessWidget {
       } catch (_) {}
     }
 
-    return ValueListenableBuilder<bool>(
-      valueListenable: LayoutState().isDesktopMode,
-      builder: (context, isDesktop, child) {
-        return Scaffold(
-          backgroundColor: const Color(0xFFF5F5F5),
-          body: isDesktop
-              ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 800), child: _buildContent(context, reward, status, statusColor, statusText, statusIcon, statusDesc, claimedDate)))
-              : _buildContent(context, reward, status, statusColor, statusText, statusIcon, statusDesc, claimedDate),
-        );
-      },
+    final bool isDesktop = MediaQuery.of(context).size.width >= 850;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: isDesktop
+          ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 800), child: _buildContent(context, reward, status, statusColor, statusText, statusIcon, statusDesc, claimedDate)))
+          : _buildContent(context, reward, status, statusColor, statusText, statusIcon, statusDesc, claimedDate),
     );
   }
 
@@ -221,7 +211,6 @@ class ClaimedRewardDetailPage extends StatelessWidget {
           ),
           Expanded(
             child: SingleChildScrollView(child: Column(children: [
-              // Reward Card
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 24), padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))]),
@@ -238,8 +227,6 @@ class ClaimedRewardDetailPage extends StatelessWidget {
                 ]),
               ),
               const SizedBox(height: 24),
-
-              // Detail
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 24), width: double.infinity,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -251,7 +238,6 @@ class ClaimedRewardDetailPage extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(reward['terms_condition'] ?? '1. Tunjukkan halaman ini ke admin.\n2. Berlaku untuk 1x penukaran.', style: TextStyle(fontSize: 13, color: Colors.grey[700], height: 1.5)),
                   const SizedBox(height: 16),
-                  // Tanggal klaim
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(color: const Color(0xFFF8F8FB), borderRadius: BorderRadius.circular(10)),
@@ -268,8 +254,6 @@ class ClaimedRewardDetailPage extends StatelessWidget {
           ),
         ]),
       ),
-
-      // [REVISI] Bottom bar — STATUS-based, tanpa kode voucher
       Align(
         alignment: Alignment.bottomCenter,
         child: Container(
@@ -281,7 +265,6 @@ class ClaimedRewardDetailPage extends StatelessWidget {
             boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 15, offset: Offset(0, -5))],
           ),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            // Status Badge
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
