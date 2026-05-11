@@ -43,6 +43,20 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
     }
   }
 
+  // [FIX] Helper: tentukan MIME type dari ekstensi file
+  String _mimeType(String ext) {
+    switch (ext.toLowerCase()) {
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      default:
+        return 'image/jpeg'; // jpg, jpeg, dll
+    }
+  }
+
   Future<void> _toggleActive(Map<String, dynamic> reward) async {
     final newStatus = !(reward['is_active'] ?? true);
     try {
@@ -53,8 +67,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
       _fetchRewards();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content:
-              Text(newStatus ? 'Hadiah diaktifkan' : 'Hadiah dinonaktifkan'),
+          content: Text(newStatus ? 'Hadiah diaktifkan' : 'Hadiah dinonaktifkan'),
           backgroundColor: const Color(0xFF10B981),
         ));
       }
@@ -78,9 +91,8 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
       _fetchRewards();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(newVal
-              ? 'Ditandai sebagai Best Deal'
-              : 'Dihapus dari Best Deal'),
+          content:
+              Text(newVal ? 'Ditandai sebagai Best Deal' : 'Dihapus dari Best Deal'),
           backgroundColor: const Color(0xFF10B981),
         ));
       }
@@ -98,8 +110,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(children: [
           Container(
             width: 40,
@@ -108,8 +119,8 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
               color: const Color(0xFFFEF2F2),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.delete_rounded,
-                color: Color(0xFFEF4444), size: 20),
+            child:
+                const Icon(Icons.delete_rounded, color: Color(0xFFEF4444), size: 20),
           ),
           const SizedBox(width: 12),
           const Text('Hapus Hadiah',
@@ -122,15 +133,13 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child:
-                const Text('Batal', style: TextStyle(color: Colors.grey)),
+            child: const Text('Batal', style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFEF4444),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               elevation: 0,
             ),
             child: const Text('Hapus', style: TextStyle(color: Colors.white)),
@@ -142,9 +151,17 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
     try {
       final imageUrl = reward['image_url'] as String?;
       if (imageUrl != null && imageUrl.contains('upsol-assets')) {
+        // [FIX] Ambil path relatif setelah '/upsol-assets/' bukan hanya .last
+        // agar subfolder (jika ada di masa depan) tetap benar
         final uri = Uri.parse(imageUrl);
-        final fileName = uri.pathSegments.last;
-        await _admin.storage.from('upsol-assets').remove([fileName]);
+        final bucketIndex =
+            uri.pathSegments.indexOf('upsol-assets');
+        if (bucketIndex != -1 &&
+            bucketIndex + 1 < uri.pathSegments.length) {
+          final filePath =
+              uri.pathSegments.sublist(bucketIndex + 1).join('/');
+          await _admin.storage.from('upsol-assets').remove([filePath]);
+        }
       }
       await _admin.from('rewards').delete().eq('id', reward['id']);
       _fetchRewards();
@@ -159,18 +176,15 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
   }
 
   Future<void> _showRewardForm({Map<String, dynamic>? existing}) async {
-    final nameCtrl =
-        TextEditingController(text: existing?['name'] ?? '');
-    final descCtrl =
-        TextEditingController(text: existing?['description'] ?? '');
+    final nameCtrl = TextEditingController(text: existing?['name'] ?? '');
+    final descCtrl = TextEditingController(text: existing?['description'] ?? '');
     final pointsCtrl = TextEditingController(
         text: existing?['points_required']?.toString() ?? '');
-    final stockCtrl = TextEditingController(
-        text: existing?['stock']?.toString() ?? '100');
+    final stockCtrl =
+        TextEditingController(text: existing?['stock']?.toString() ?? '100');
     final termsCtrl =
         TextEditingController(text: existing?['terms_condition'] ?? '');
 
-    // ── [FIX] Ganti File? dengan XFile? + Uint8List? agar berjalan di Flutter Web ──
     XFile? pickedFile;
     Uint8List? pickedBytes;
     String? existingImageUrl = existing?['image_url'];
@@ -188,8 +202,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
             height: MediaQuery.of(ctx).size.height * 0.9,
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: Column(
               children: [
@@ -213,9 +226,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(
-                        existing == null
-                            ? Icons.add_rounded
-                            : Icons.edit_rounded,
+                        existing == null ? Icons.add_rounded : Icons.edit_rounded,
                         color: const Color(0xFFB71C1C),
                         size: 20,
                       ),
@@ -237,13 +248,12 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                 const Divider(height: 24),
                 Expanded(
                   child: SingleChildScrollView(
-                    padding:
-                        const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _formField('Nama Hadiah *', nameCtrl,
-                            'Contoh: Voucher Oli 5L'),
+                        _formField(
+                            'Nama Hadiah *', nameCtrl, 'Contoh: Voucher Oli 5L'),
                         const SizedBox(height: 16),
                         _formField('Deskripsi', descCtrl,
                             'Deskripsi singkat hadiah',
@@ -253,20 +263,17 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                         // Tipe
                         const Text('Tipe *',
                             style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600)),
+                                fontSize: 13, fontWeight: FontWeight.w600)),
                         const SizedBox(height: 8),
                         Row(
-                          children:
-                              ['VOUCHER', 'PRODUCT'].map((type) {
+                          children: ['VOUCHER', 'PRODUCT'].map((type) {
                             final isSelected = selectedType == type;
                             return Expanded(
                               child: GestureDetector(
-                                onTap: () => setModalState(
-                                    () => selectedType = type),
+                                onTap: () =>
+                                    setModalState(() => selectedType = type),
                                 child: AnimatedContainer(
-                                  duration:
-                                      const Duration(milliseconds: 200),
+                                  duration: const Duration(milliseconds: 200),
                                   margin: EdgeInsets.only(
                                     right: type == 'VOUCHER' ? 8 : 0,
                                     left: type == 'PRODUCT' ? 8 : 0,
@@ -278,8 +285,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                                         ? const Color(0xFFB71C1C)
                                             .withOpacity(0.08)
                                         : const Color(0xFFF9FAFB),
-                                    borderRadius:
-                                        BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
                                       color: isSelected
                                           ? const Color(0xFFB71C1C)
@@ -293,8 +299,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                                     children: [
                                       Icon(
                                         type == 'VOUCHER'
-                                            ? Icons
-                                                .confirmation_number_rounded
+                                            ? Icons.confirmation_number_rounded
                                             : Icons.inventory_2_rounded,
                                         size: 18,
                                         color: isSelected
@@ -303,9 +308,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                                       ),
                                       const SizedBox(width: 8),
                                       Text(
-                                        type == 'VOUCHER'
-                                            ? 'Voucher'
-                                            : 'Produk',
+                                        type == 'VOUCHER' ? 'Voucher' : 'Produk',
                                         style: TextStyle(
                                           fontWeight: isSelected
                                               ? FontWeight.w600
@@ -327,18 +330,13 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                         // Poin & Stok
                         Row(children: [
                           Expanded(
-                              child: _formField(
-                                  'Poin Diperlukan *',
-                                  pointsCtrl,
+                              child: _formField('Poin Diperlukan *', pointsCtrl,
                                   '100',
-                                  keyboardType:
-                                      TextInputType.number)),
+                                  keyboardType: TextInputType.number)),
                           const SizedBox(width: 12),
                           Expanded(
-                              child: _formField('Stok *', stockCtrl,
-                                  '100',
-                                  keyboardType:
-                                      TextInputType.number)),
+                              child: _formField('Stok *', stockCtrl, '100',
+                                  keyboardType: TextInputType.number)),
                         ]),
                         const SizedBox(height: 16),
 
@@ -367,8 +365,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     'Best Deal',
@@ -405,8 +402,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                         // Gambar
                         const Text('Gambar Hadiah',
                             style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600)),
+                                fontSize: 13, fontWeight: FontWeight.w600)),
                         const SizedBox(height: 8),
                         GestureDetector(
                           onTap: () async {
@@ -416,9 +412,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                               imageQuality: 85,
                             );
                             if (picked != null) {
-                              // ── [FIX] Baca sebagai bytes → kompatibel Web & Mobile ──
-                              final bytes =
-                                  await picked.readAsBytes();
+                              final bytes = await picked.readAsBytes();
                               setModalState(() {
                                 pickedFile = picked;
                                 pickedBytes = bytes;
@@ -431,34 +425,43 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFF9FAFB),
                               borderRadius: BorderRadius.circular(12),
-                              border:
-                                  Border.all(color: Colors.grey[300]!),
+                              border: Border.all(color: Colors.grey[300]!),
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(12),
                               child: pickedBytes != null
-                                  // ── [FIX] Gunakan Image.memory untuk preview ──
-                                  ? Image.memory(pickedBytes!,
-                                      fit: BoxFit.cover)
+                                  ? Image.memory(pickedBytes!, fit: BoxFit.cover)
                                   : (existingImageUrl != null &&
                                           existingImageUrl!.isNotEmpty)
-                                      ? Image.network(existingImageUrl!,
-                                          fit: BoxFit.cover)
+                                      ? Image.network(
+                                          existingImageUrl!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.broken_image_rounded,
+                                                  size: 36,
+                                                  color: Colors.grey[400]),
+                                              const SizedBox(height: 8),
+                                              Text('Gambar tidak tersedia',
+                                                  style: TextStyle(
+                                                      color: Colors.grey[500],
+                                                      fontSize: 13)),
+                                            ],
+                                          ),
+                                        )
                                       : Column(
                                           mainAxisAlignment:
                                               MainAxisAlignment.center,
                                           children: [
-                                            Icon(
-                                                Icons
-                                                    .add_photo_alternate_rounded,
-                                                size: 36,
-                                                color: Colors.grey[400]),
+                                            Icon(Icons.add_photo_alternate_rounded,
+                                                size: 36, color: Colors.grey[400]),
                                             const SizedBox(height: 8),
                                             Text(
                                               'Tap untuk pilih gambar',
                                               style: TextStyle(
-                                                  color:
-                                                      Colors.grey[500],
+                                                  color: Colors.grey[500],
                                                   fontSize: 13),
                                             ),
                                           ],
@@ -468,8 +471,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                         ),
                         const SizedBox(height: 16),
 
-                        _formField(
-                            'Syarat & Ketentuan', termsCtrl, 'Opsional',
+                        _formField('Syarat & Ketentuan', termsCtrl, 'Opsional',
                             maxLines: 3),
                         const SizedBox(height: 24),
 
@@ -485,55 +487,62 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                                         pointsCtrl.text.trim().isEmpty) {
                                       ScaffoldMessenger.of(ctx)
                                           .showSnackBar(const SnackBar(
-                                        content: Text(
-                                            'Nama dan Poin wajib diisi'),
-                                        backgroundColor:
-                                            Color(0xFFEF4444),
+                                        content:
+                                            Text('Nama dan Poin wajib diisi'),
+                                        backgroundColor: Color(0xFFEF4444),
                                       ));
                                       return;
                                     }
-                                    setModalState(
-                                        () => isSaving = true);
+                                    setModalState(() => isSaving = true);
                                     try {
-                                      String? finalImageUrl =
-                                          existingImageUrl;
+                                      String? finalImageUrl = existingImageUrl;
+
                                       if (pickedBytes != null &&
                                           pickedFile != null) {
-                                        // ── [FIX] Upload pakai uploadBinary → kompatibel Web ──
                                         final ext = pickedFile!.name
                                             .split('.')
-                                            .last;
+                                            .last
+                                            .toLowerCase();
                                         final fileName =
                                             'reward_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+                                        // [FIX] Tambah contentType agar Supabase Storage
+                                        // menyimpan dan menyajikan file dengan MIME type
+                                        // yang benar — tanpa ini gambar return 400
                                         await _admin.storage
                                             .from('upsol-assets')
                                             .uploadBinary(
-                                                fileName, pickedBytes!);
+                                              fileName,
+                                              pickedBytes!,
+                                              fileOptions: FileOptions(
+                                                contentType: _mimeType(ext),
+                                                upsert: false,
+                                              ),
+                                            );
+
                                         finalImageUrl = _admin.storage
                                             .from('upsol-assets')
                                             .getPublicUrl(fileName);
                                       }
+
                                       final data = {
                                         'name': nameCtrl.text.trim(),
-                                        'description':
-                                            descCtrl.text.trim(),
+                                        'description': descCtrl.text.trim(),
                                         'type': selectedType,
                                         'points_required': int.parse(
                                             pointsCtrl.text.trim()),
                                         'stock': int.tryParse(
-                                                stockCtrl.text
-                                                    .trim()) ??
+                                                stockCtrl.text.trim()) ??
                                             100,
                                         'image_url': finalImageUrl,
-                                        'terms_condition': termsCtrl
-                                                .text
-                                                .trim()
-                                                .isEmpty
-                                            ? null
-                                            : termsCtrl.text.trim(),
+                                        'terms_condition':
+                                            termsCtrl.text.trim().isEmpty
+                                                ? null
+                                                : termsCtrl.text.trim(),
                                         'is_active': true,
                                         'is_best_deal': isBestDeal,
                                       };
+
                                       if (existing != null) {
                                         await _admin
                                             .from('rewards')
@@ -544,12 +553,10 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                                             .from('rewards')
                                             .insert(data);
                                       }
-                                      if (ctx.mounted) {
-                                        Navigator.pop(ctx, true);
-                                      }
+
+                                      if (ctx.mounted) Navigator.pop(ctx, true);
                                     } catch (e) {
-                                      setModalState(
-                                          () => isSaving = false);
+                                      setModalState(() => isSaving = false);
                                       if (ctx.mounted) {
                                         ScaffoldMessenger.of(ctx)
                                             .showSnackBar(SnackBar(
@@ -565,16 +572,14 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                               foregroundColor: Colors.white,
                               elevation: 0,
                               shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(14)),
+                                  borderRadius: BorderRadius.circular(14)),
                             ),
                             child: isSaving
                                 ? const SizedBox(
                                     width: 22,
                                     height: 22,
                                     child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2.5),
+                                        color: Colors.white, strokeWidth: 2.5),
                                   )
                                 : Text(
                                     existing == null
@@ -610,8 +615,8 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: const TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w600)),
+            style:
+                const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
@@ -621,12 +626,11 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
           style: const TextStyle(fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle:
-                TextStyle(color: Colors.grey[400], fontSize: 14),
+            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
             filled: true,
             fillColor: const Color(0xFFF9FAFB),
-            contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 12),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(color: Colors.grey[200]!),
@@ -637,8 +641,8 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                  color: Color(0xFFB71C1C), width: 1.5),
+              borderSide:
+                  const BorderSide(color: Color(0xFFB71C1C), width: 1.5),
             ),
           ),
         ),
@@ -656,8 +660,8 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
         elevation: 0,
         leading: IconButton(
           onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_rounded,
-              color: Color(0xFF1A1A2E)),
+          icon:
+              const Icon(Icons.arrow_back_rounded, color: Color(0xFF1A1A2E)),
         ),
         title: const Text('Kelola Hadiah',
             style: TextStyle(
@@ -667,8 +671,8 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 16),
-            padding: const EdgeInsets.symmetric(
-                horizontal: 8, vertical: 4),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: const Color(0xFFF3F4F6),
               borderRadius: BorderRadius.circular(8),
@@ -692,8 +696,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(
-                  color: Color(0xFFB71C1C)))
+              child: CircularProgressIndicator(color: Color(0xFFB71C1C)))
           : _rewards.isEmpty
               ? Center(
                   child: Column(
@@ -712,13 +715,11 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                       const SizedBox(height: 16),
                       const Text('Belum ada hadiah',
                           style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600)),
+                              fontSize: 16, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 4),
                       const Text('Tap + untuk menambahkan',
                           style: TextStyle(
-                              color: Color(0xFF9CA3AF),
-                              fontSize: 13)),
+                              color: Color(0xFF9CA3AF), fontSize: 13)),
                     ],
                   ),
                 )
@@ -727,8 +728,8 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                   onRefresh: _fetchRewards,
                   child: isDesktop
                       ? GridView.builder(
-                          padding: const EdgeInsets.fromLTRB(
-                              24, 24, 24, 100),
+                          padding:
+                              const EdgeInsets.fromLTRB(24, 24, 24, 100),
                           gridDelegate:
                               const SliverGridDelegateWithMaxCrossAxisExtent(
                             maxCrossAxisExtent: 350,
@@ -741,11 +742,11 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                               _buildRewardCard(_rewards[i], i, true),
                         )
                       : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(
-                              20, 16, 20, 100),
+                          padding:
+                              const EdgeInsets.fromLTRB(20, 16, 20, 100),
                           itemCount: _rewards.length,
-                          itemBuilder: (context, i) => _buildRewardCard(
-                              _rewards[i], i, false),
+                          itemBuilder: (context, i) =>
+                              _buildRewardCard(_rewards[i], i, false),
                         ),
                 ),
     );
@@ -782,8 +783,8 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
             if (r['image_url'] != null &&
                 r['image_url'].toString().isNotEmpty)
               ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(16)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(16)),
                 child: Stack(
                   children: [
                     Image.network(
@@ -827,10 +828,8 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                  Icons.local_fire_department_rounded,
-                                  color: Colors.white,
-                                  size: 12),
+                              Icon(Icons.local_fire_department_rounded,
+                                  color: Colors.white, size: 12),
                               SizedBox(width: 4),
                               Text('Best Deal',
                                   style: TextStyle(
@@ -857,8 +856,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                         decoration: BoxDecoration(
                           color: r['type'] == 'VOUCHER'
                               ? const Color(0xFF3B82F6).withOpacity(0.1)
-                              : const Color(0xFF10B981)
-                                  .withOpacity(0.1),
+                              : const Color(0xFF10B981).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -894,8 +892,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                       const SizedBox(width: 4),
                       Text('${r['points_required']}',
                           style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700)),
+                              fontSize: 16, fontWeight: FontWeight.w700)),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -946,8 +943,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
                     ),
                     const SizedBox(width: 6),
                     _actionBtn(Icons.delete_rounded, 'Hapus',
-                        const Color(0xFFEF4444),
-                        () => _deleteReward(r)),
+                        const Color(0xFFEF4444), () => _deleteReward(r)),
                   ]),
                 ],
               ),
@@ -963,8 +959,7 @@ class _RewardsManagePageState extends State<RewardsManagePage> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           color: color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(8),
