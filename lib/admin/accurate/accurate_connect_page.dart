@@ -248,74 +248,7 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
               const SizedBox(height: 16),
 
               // [UPDATE] UI Pencarian dan Filter AJAX
-              if (_isSessionOpen) ...[
-                const Text('Pencarian Pelanggan Accurate', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
-                        onChanged: _onSearchChanged,
-                        decoration: InputDecoration(
-                          hintText: 'Cari nama atau kode pelanggan...',
-                          prefixIcon: _isSearching 
-                              ? const Padding(
-                                  padding: EdgeInsets.all(12.0),
-                                  child: CircularProgressIndicator(strokeWidth: 2), 
-                                )
-                              : const Icon(Icons.search),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          filled: true,
-                          fillColor: Colors.grey[100],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 1,
-                      child: DropdownButtonFormField<String>(
-                        value: _statusFilter,
-                        decoration: InputDecoration(
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                          filled: true,
-                          fillColor: Colors.white,
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'ALL', child: Text('Semua Status')),
-                          DropdownMenuItem(value: 'ACTIVE', child: Text('Aktif Saja')),
-                          DropdownMenuItem(value: 'INACTIVE', child: Text('Tidak Aktif')),
-                        ],
-                        onChanged: _onFilterChanged, 
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                
-                // Menampilkan hasil pencarian
-                if (_accurateCustomers.isNotEmpty) ...[
-                  Text('Menampilkan ${_accurateCustomers.length} pelanggan Accurate:'),
-                  const SizedBox(height: 8),
-                  // Render daftar pelanggan
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _accurateCustomers.length,
-                    itemBuilder: (context, index) {
-                      final customer = _accurateCustomers[index];
-                      return ListTile(
-                        title: Text(customer['name'] ?? 'Unknown'),
-                        subtitle: Text(customer['customerNo'] ?? ''),
-                        trailing: Text(customer['suspended'] == true ? 'Tidak Aktif' : 'Aktif'),
-                      );
-                    },
-                  ),
-                ] else if (!_isSearching && _searchKeyword.isNotEmpty) ...[
-                  const Text('Pelanggan tidak ditemukan.'),
-                ],
-                const SizedBox(height: 20),
-              ],
+          
 
               _buildCard(step: 3, title: 'Sync Faktur → Poin', subtitle: 'Konversi faktur penjualan Accurate ke poin toko', isDone: _lastSyncResult != null, isDisabled: !_isSessionOpen, child: _isSessionOpen ? Column(children: [
                 Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFFDE68A))), child: const Row(children: [Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFFF59E0B)), SizedBox(width: 8), Expanded(child: Text('Anti-double otomatis — faktur yang sudah diproses tidak akan dihitung ulang.', style: TextStyle(fontSize: 12, color: Color(0xFF92400E), height: 1.4)))])),
