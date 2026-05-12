@@ -34,8 +34,7 @@ class _RegisterPageState extends State<RegisterPage>
   final _picNameController = TextEditingController();
   final _storeAddressController = TextEditingController();
   final _accurateIdController = TextEditingController();
-  final _domisiliController =
-      TextEditingController(); // [UPDATE] Berubah jadi input text bebas
+  final _domisiliController = TextEditingController(); 
 
   final _ktpNumberController = TextEditingController();
 
@@ -112,23 +111,26 @@ class _RegisterPageState extends State<RegisterPage>
         final phone = _phoneController.text.trim();
         if (phone.isEmpty) return _showError('Nomor HP wajib diisi');
         if (phone.length < 10) return _showError('Nomor HP minimal 10 digit');
-        // [UPDATE] Validasi nomor HP harus format 08
         if (phone.startsWith('+62'))
           return _showError('Gunakan awalan 08, bukan +62');
         if (!phone.startsWith('08'))
           return _showError('Nomor HP harus diawali dengan 08');
 
-        if (_emailController.text.trim().isEmpty)
-          return _showError('Email wajib diisi');
-        if (!_emailController.text.trim().contains('@'))
+        // [FITUR BARU] Email sekarang opsional
+        final emailText = _emailController.text.trim();
+        if (emailText.isNotEmpty && !emailText.contains('@')) {
           return _showError('Format email tidak valid');
-        if (_passwordController.text.length < 6)
-          return _showError('Password minimal 6 karakter');
-        if (_passwordController.text != _confirmPasswordController.text)
+        }
+        
+        // [FITUR BARU] Validasi password min 6 dihapus
+        if (_passwordController.text.isEmpty) {
+          return _showError('Password wajib diisi');
+        }
+        if (_passwordController.text != _confirmPasswordController.text) {
           return _showError('Konfirmasi password tidak cocok');
+        }
         return true;
       case 1:
-        // [UPDATE] Kode pelanggan jadi wajib
         if (_accurateIdController.text.trim().isEmpty)
           return _showError('Kode Pelanggan wajib diisi');
         if (_namaTokoController.text.trim().isEmpty)
@@ -145,7 +147,6 @@ class _RegisterPageState extends State<RegisterPage>
           return _showError('Nomor KTP wajib diisi');
         if (_ktpNumberController.text.trim().length < 16)
           return _showError('Nomor KTP harus 16 digit');
-        // [UPDATE] Validasi foto KTP dihapus
         return true;
       default:
         return true;
@@ -167,15 +168,16 @@ class _RegisterPageState extends State<RegisterPage>
         fullName: _namaTokoController.text.trim(),
         picName: _picNameController.text.trim(),
         storeAddress: _storeAddressController.text.trim(),
-        domisili: _domisiliController.text.trim(), // [UPDATE]
+        domisili: _domisiliController.text.trim(),
         ktpNumber: _ktpNumberController.text.trim(),
         accurateCustomerId: _accurateIdController.text.trim(),
-        // [UPDATE] Parameter foto KTP dibuang
       );
 
       if (!mounted) return;
       hideLoading(context);
 
+      // Jika pakai dummy email (karena form email kosong), result['needsEmailVerification'] pasti false
+      // User akan langsung diarahkan ke dialog sukses / pending.
       if (result['needsEmailVerification'] == true) {
         _goToEmailVerification(result['email'] as String);
       } else {
@@ -198,13 +200,9 @@ class _RegisterPageState extends State<RegisterPage>
           return FadeTransition(
             opacity: anim,
             child: SlideTransition(
-              position:
-                  Tween<Offset>(
-                    begin: const Offset(0, 0.1),
-                    end: Offset.zero,
-                  ).animate(
-                    CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
-                  ),
+              position: Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(
+                CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+              ),
               child: child,
             ),
           );
@@ -699,11 +697,12 @@ class _RegisterPageState extends State<RegisterPage>
                 keyboardType: TextInputType.phone,
               ),
               const SizedBox(height: 18),
-              _buildLabel('Email', isRequired: true),
+              // [UPDATE] Label email menjadi tidak wajib (isRequired dihapus)
+              _buildLabel('Email (Opsional)', isRequired: false),
               const SizedBox(height: 8),
               _buildTextField(
                 controller: _emailController,
-                hint: 'Contoh: toko@email.com',
+                hint: 'Kosongkan jika tidak ada',
                 icon: Icons.email_outlined,
                 keyboardType: TextInputType.emailAddress,
               ),
@@ -712,7 +711,7 @@ class _RegisterPageState extends State<RegisterPage>
               const SizedBox(height: 8),
               _buildPasswordField(
                 controller: _passwordController,
-                hint: 'Minimal 6 karakter',
+                hint: 'Masukkan password',
                 showPassword: _showPass,
                 onToggle: () => setState(() => _showPass = !_showPass),
               ),
@@ -730,7 +729,7 @@ class _RegisterPageState extends State<RegisterPage>
           const SizedBox(height: 14),
           _buildInfoBox(
             text:
-                'Nomor HP dan Email akan digunakan untuk login. Pastikan keduanya aktif.',
+                'Nomor HP akan digunakan sebagai ID login utama Anda. Simpan password Anda baik-baik.',
             bgColor: const Color(0xFFFFF8E1),
             borderColor: const Color(0xFFFFE082),
             iconColor: const Color(0xFFF57F17),
@@ -749,7 +748,6 @@ class _RegisterPageState extends State<RegisterPage>
           const SizedBox(height: 20),
           _buildFormCard(
             children: [
-              // [UPDATE] Label menjadi wajib
               _buildLabel('Kode Pelanggan Accurate', isRequired: true),
               const SizedBox(height: 8),
               _buildTextField(
@@ -784,8 +782,6 @@ class _RegisterPageState extends State<RegisterPage>
                 maxLines: 2,
               ),
               const SizedBox(height: 18),
-
-              // [UPDATE] Berubah jadi input teks biasa
               _buildLabel('Kota / Domisili', isRequired: true),
               const SizedBox(height: 8),
               _buildTextField(
@@ -820,7 +816,6 @@ class _RegisterPageState extends State<RegisterPage>
               ),
 
               const SizedBox(height: 14),
-              // [UPDATE] Pesan amaran mengenai kegunaan KTP
               _buildInfoBox(
                 text:
                     'Nomor KTP digunakan untuk proses verifikasi identitas saat Anda melakukan klaim hadiah.',
@@ -828,7 +823,6 @@ class _RegisterPageState extends State<RegisterPage>
                 borderColor: const Color(0xFFBAE6FD),
                 iconColor: const Color(0xFF0284C7),
               ),
-              // [UPDATE] Kotak foto KTP telah dibuang sepenuhnya
             ],
           ),
         ],

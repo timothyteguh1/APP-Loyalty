@@ -27,8 +27,17 @@ class AuthController {
           ? accurateCustomerId.trim()
           : null;
 
+      String finalEmail = email.trim();
+      bool isDummyEmail = false;
+      
+      if (finalEmail.isEmpty) {
+        final cleanPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
+        finalEmail = '$cleanPhone@bka.local'; 
+        isDummyEmail = true;
+      }
+
       final AuthResponse res = await _supabase.auth.signUp(
-        email: email,
+        email: finalEmail,
         password: password,
         data: {
           'full_name': fullName,
@@ -47,7 +56,7 @@ class AuthController {
         'domisili': domisili,
         'ktp_number': ktpNumber,
         'accurate_customer_id': validAccurateId,
-        'email': email,           // [FIX] Simpan email di profiles agar bisa di-query langsung
+        'email': isDummyEmail ? null : finalEmail, 
         'has_password': true,
         'is_profile_completed': true,
         'approval_status': 'PENDING',
@@ -55,7 +64,7 @@ class AuthController {
       }).eq('id', user.id);
 
       final String userId = user.id;
-      final bool needsEmailVerification = (res.session == null);
+      final bool needsEmailVerification = !isDummyEmail && (res.session == null);
 
       // ======= EMAIL NOTIFIKASI ADMIN =======
       try {
@@ -83,12 +92,12 @@ class AuthController {
 
       return {
         'needsEmailVerification': needsEmailVerification,
-        'email': email,
+        'email': finalEmail,
         'userId': userId,
       };
     } on AuthException catch (e) {
       if (e.message.contains('User already registered')) {
-        throw 'Email ini sudah terdaftar. Coba login saja.';
+        throw 'Akun ini sudah terdaftar. Coba login saja.';
       }
       if (e.message.contains('rate limit') || e.message.contains('over_email_send_rate_limit')) {
         throw 'Terlalu banyak percobaan. Tunggu beberapa menit.';
@@ -100,16 +109,11 @@ class AuthController {
     }
   }
 
-  // ============================================================
-  // KIRIM ULANG EMAIL VERIFIKASI
-  // ============================================================
   Future<void> resendVerificationEmail({required String email}) async {
     try {
       await _supabase.auth.resend(type: OtpType.signup, email: email);
     } on AuthException catch (e) {
-      if (e.message.contains('rate limit') || e.message.contains('over_email_send_rate_limit')) {
-        throw 'Terlalu sering mengirim. Tunggu beberapa menit.';
-      }
+      if (e.message.contains('rate limit')) throw 'Terlalu sering mengirim. Tunggu beberapa menit.';
       throw 'Gagal mengirim ulang: ${e.message}';
     } catch (e) {
       if (e is String) rethrow;
@@ -117,16 +121,11 @@ class AuthController {
     }
   }
 
-  // ============================================================
-  // LUPA PASSWORD
-  // ============================================================
   Future<void> sendPasswordResetEmail({required String email}) async {
     try {
       await _supabase.auth.resetPasswordForEmail(email);
     } on AuthException catch (e) {
-      if (e.message.contains('rate limit') || e.message.contains('over_email_send_rate_limit')) {
-        throw 'Terlalu sering mengirim. Tunggu beberapa menit.';
-      }
+      if (e.message.contains('rate limit')) throw 'Terlalu sering mengirim. Tunggu beberapa menit.';
       throw 'Gagal mengirim email reset: ${e.message}';
     } catch (e) {
       if (e is String) rethrow;
@@ -138,12 +137,12 @@ class AuthController {
   // FUNGSI LOGIN
   // ============================================================
   Future<void> signIn({required String identifier, required String password}) async {
+    String emailToLogin = identifier.trim().toLowerCase();
+    
     try {
-      String emailToLogin = identifier.trim().toLowerCase();
       final bool isPhone = _isPhoneNumber(identifier.trim());
 
       if (isPhone) {
-        // Login via nomor HP: cari email dari profiles.phone
         final result = await _supabase
             .from('profiles')
             .select('id')
@@ -161,28 +160,15 @@ class AuthController {
         emailToLogin = emailResult.toString();
       }
 
-      // ============================================================
-      // [FIX] Cek has_password sebelum mencoba signInWithPassword.
-      //
-      // Kasus: User dari Accurate yang sudah setup password via OTP
-      // tapi belum selesai edit profil, lalu logout dan coba login
-      // lagi. Mereka PUNYA password → boleh lanjut signInWithPassword.
-      //
-      // Kalau has_password = false → user belum pernah setup password
-      // → jangan coba login, lempar error khusus agar UI bisa redirect
-      // ke EmailEntryPage untuk kirim OTP ulang.
-      // ============================================================
       final profileCheck = await _supabase
           .from('profiles')
           .select('has_password')
           .eq('email', emailToLogin)
           .maybeSingle();
 
-      // Kalau tidak ketemu via email kolom, coba via RPC (user Accurate lama)
       bool hasPassword = profileCheck?['has_password'] == true;
 
       if (!hasPassword && profileCheck == null) {
-        // Fallback: cek via auth email → profiles join
         try {
           final rpcResult = await _supabase.rpc(
             'get_profile_by_auth_email',
@@ -195,7 +181,6 @@ class AuthController {
       }
 
       if (!hasPassword) {
-        // User belum punya password → harusnya pakai OTP flow
         throw 'NEEDS_OTP_LOGIN';
       }
 
@@ -203,10 +188,32 @@ class AuthController {
         email: emailToLogin,
         password: password,
       );
+
+      // --- TAMBAHKAN KODE INI UNTUK MEMASTIKAN STATUS TERBARU ---
+      final user = _supabase.auth.currentUser;
+      if (user != null) {
+        final latestProfile = await _supabase
+            .from('profiles')
+            .select('approval_status')
+            .eq('id', user.id)
+            .maybeSingle();
+            
+        if (latestProfile != null && latestProfile['approval_status'] == 'PENDING') {
+           // Jika ternyata di DB masih PENDING, lempar error agar UI tetap di halaman login
+           if (emailToLogin.endsWith('@bka.local')) {
+             throw 'PHONE_NOT_VERIFIED_YET';
+           }
+        }
+      }
+
     } on AuthException catch (e) {
       if (e.message.contains('Invalid login') || e.message.contains('invalid_credentials')) {
         throw 'Email/No HP atau Password salah. Cek lagi ya!';
       } else if (e.message.contains('Email not confirmed') || e.message.contains('email_not_confirmed')) {
+        // [FITUR BARU] Cek apakah ini email bayangan dari pendaftaran no HP
+        if (emailToLogin.endsWith('@bka.local')) {
+          throw 'PHONE_NOT_VERIFIED_YET';
+        }
         throw 'EMAIL_NOT_CONFIRMED';
       }
       throw 'Login gagal: ${e.message}';
@@ -216,9 +223,6 @@ class AuthController {
     }
   }
 
-  // ============================================================
-  // CEK STATUS APPROVAL
-  // ============================================================
   Future<String> checkApprovalStatus() async {
     final user = currentUser;
     if (user == null) return 'UNKNOWN';
@@ -235,9 +239,6 @@ class AuthController {
     }
   }
 
-  // ============================================================
-  // AMBIL PROFILE
-  // ============================================================
   Future<Map<String, dynamic>?> getProfile() async {
     final user = currentUser;
     if (user == null) return null;
@@ -252,9 +253,6 @@ class AuthController {
     }
   }
 
-  // ============================================================
-  // UPDATE PROFILE (setelah REJECTED)
-  // ============================================================
   Future<void> updateProfileForResubmit({
     required String fullName,
     required String picName,
@@ -284,16 +282,10 @@ class AuthController {
     }
   }
 
-  // ============================================================
-  // LOGOUT
-  // ============================================================
   Future<void> signOut() async {
     await _supabase.auth.signOut();
   }
 
-  // ============================================================
-  // HELPER
-  // ============================================================
   bool _isPhoneNumber(String input) {
     final cleaned = input.replaceAll(RegExp(r'[\s\-\(\)]'), '');
     if (cleaned.startsWith('+')) return RegExp(r'^\+\d{8,15}$').hasMatch(cleaned);

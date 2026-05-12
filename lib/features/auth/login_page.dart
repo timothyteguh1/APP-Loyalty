@@ -3,7 +3,6 @@ import '../../controllers/auth_controller.dart';
 import '../../utils/layout_state.dart';
 import 'register_page.dart';
 import 'email_verification_page.dart';
-import 'email_entry_page.dart';
 
 class LoginPage extends StatefulWidget {
   final String? initialEmail;
@@ -102,7 +101,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   Future<void> _handleLogin() async {
     FocusManager.instance.primaryFocus?.unfocus();
 
-    // [UPDATE] Auto ubah format +62 jadi 0
     String identifier = _identifierController.text.trim();
     if (identifier.startsWith('+62')) {
       identifier = identifier.replaceFirst('+62', '0');
@@ -130,20 +128,27 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     } catch (e) {
       final errorMsg = e.toString();
+      
+      // [UPDATE TAMPILAN ERROR]
       if (errorMsg == 'EMAIL_NOT_CONFIRMED') {
         setState(() {
           _error = 'Email belum diverifikasi. Cek inbox email kamu dan klik link verifikasi.';
           _unverifiedEmail = identifier;
         });
+      } else if (errorMsg == 'PHONE_NOT_VERIFIED_YET') {
+        setState(() {
+          // Hanya tulisan merah biasa, kotak kuning verifikasi email TIDAK AKAN MUNCUL
+          _error = 'Akun Anda sedang dalam proses persetujuan Admin. Harap tunggu.';
+          _unverifiedEmail = null; 
+        });
       } else if (errorMsg == 'NEEDS_OTP_LOGIN') {
-        // [FIX] User Accurate belum setup password → redirect ke EmailEntryPage
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Row(children: [
             Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
             SizedBox(width: 10),
             Expanded(child: Text(
-              'Akun ini belum memiliki password. Silakan verifikasi email terlebih dahulu.',
+              'Akun belum terdaftar atau belum memiliki password. Silakan daftar terlebih dahulu.',
               style: TextStyle(fontWeight: FontWeight.w600),
             )),
           ]),
@@ -153,16 +158,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           duration: const Duration(seconds: 3),
         ));
-        await Future.delayed(const Duration(seconds: 1));
-        if (!mounted) return;
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const EmailEntryPage()),
-          (route) => false,
-        );
       } else {
         setState(() {
-          _error = errorMsg;
+          _error = errorMsg.contains('Invalid login credentials')
+              ? 'Akun tidak ditemukan atau password salah.'
+              : errorMsg;
           _unverifiedEmail = null;
         });
       }
@@ -854,7 +854,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                                                 .center,
                                                         children: [
                                                           Text(
-                                                            'Masuk',
+                                                            'Lanjutkan',
                                                             style: TextStyle(
                                                               fontSize: 16,
                                                               fontWeight:
@@ -923,7 +923,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Text(
-                                          'Belum punya akun?',
+                                          'Baru pertama?',
                                           style: TextStyle(
                                             color: Colors.white.withOpacity(
                                               0.7,

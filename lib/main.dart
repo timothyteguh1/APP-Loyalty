@@ -68,7 +68,8 @@ class AuthGate extends StatelessWidget {
         if (session != null) {
           return const _ApprovalChecker();
         } else {
-          return const EmailEntryPage();
+          // [UPDATE] Langsung arahkan ke LoginPage (Bypass EmailEntryPage)
+          return const LoginPage(); 
         }
       },
     );
