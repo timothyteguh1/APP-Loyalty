@@ -1,4 +1,4 @@
-import 'dart:async'; // [UPDATE] Import Timer untuk debounce
+import 'dart:async'; 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,7 +16,11 @@ class AccurateConnectPage extends StatefulWidget {
 class _AccurateConnectPageState extends State<AccurateConnectPage> {
   final _admin = AdminSupabase.client;
   final _tokenController = TextEditingController();
-  final _accurateService = AccurateService(); // [UPDATE] Instance AccurateService
+  final _accurateService = AccurateService(); 
+
+  // [FITUR BARU] Text Controllers untuk form Pengaturan Kredensial
+  final _clientIdController = TextEditingController();
+  final _dbIdController = TextEditingController();
 
   bool _isLoading = true;
   bool _isSyncing = false;
@@ -26,9 +30,6 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
   SyncResult? _lastSyncResult;
   String _syncProgress = '';
 
-  static const String _knownDbId = '74873';
-
-  // [UPDATE] State untuk AJAX dan Filter
   List<dynamic> _accurateCustomers = [];
   String _searchKeyword = '';
   String _statusFilter = 'ALL'; 
@@ -44,7 +45,9 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
   @override
   void dispose() {
     _tokenController.dispose();
-    _debounceTimer?.cancel(); // [UPDATE] Cancel timer saat dispose
+    _clientIdController.dispose();
+    _dbIdController.dispose();
+    _debounceTimer?.cancel(); 
     super.dispose();
   }
 
@@ -70,8 +73,40 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
   }
 
   Future<void> _loadConfig() async {
-    try { _config = await AccurateService.loadConfig(_admin); } catch (e) { debugPrint('Load config error: $e'); }
-    finally { if (mounted) setState(() => _isLoading = false); }
+    try { 
+      _config = await AccurateService.loadConfig(_admin); 
+      
+      // Mengisi form pengaturan otomatis
+      _clientIdController.text = _config['accurate_client_id'] ?? AccurateService.defaultClientId;
+      _dbIdController.text = _config['accurate_target_db_id'] ?? AccurateService.defaultDbId;
+    } catch (e) { 
+      debugPrint('Load config error: $e'); 
+    }
+    finally { 
+      if (mounted) setState(() => _isLoading = false); 
+    }
+  }
+
+  // [FITUR BARU] Aksi Menyimpan Konfigurasi API
+  Future<void> _saveApiSettings() async {
+    final clientId = _clientIdController.text.trim();
+    final dbId = _dbIdController.text.trim();
+
+    if (clientId.isEmpty || dbId.isEmpty) {
+      _showSnack('Client ID & Database ID tidak boleh kosong!', false);
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      await AccurateService.saveCredentials(_admin, clientId, dbId);
+      await _loadConfig();
+      _showSnack('Pengaturan API & Database berhasil disimpan!', true);
+    } catch (e) {
+      _showSnack('Gagal menyimpan: $e', false);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _saveTokenAndOpenDb(String token) async {
@@ -81,12 +116,20 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
       await _loadConfig();
       _showSnack('Token tersimpan! Membuka database...', true);
       setState(() => _syncProgress = 'Membuka database Accurate...');
-      final result = await AccurateService.openDatabase(token, _knownDbId);
-      await AccurateService.saveSession(_admin, _knownDbId, result['host']!, result['session']!);
+      
+      // Menggunakan DB ID dari Controller
+      final targetDb = _dbIdController.text.trim();
+      final result = await AccurateService.openDatabase(token, targetDb);
+      await AccurateService.saveSession(_admin, targetDb, result['host']!, result['session']!);
+      
       await _loadConfig();
       _showSnack('Berhasil terhubung ke Accurate!', true);
-    } catch (e) { _showSnack('Gagal: $e', false); }
-    finally { if (mounted) setState(() { _isLoading = false; _syncProgress = ''; }); }
+    } catch (e) { 
+      _showSnack('Gagal: $e', false); 
+    }
+    finally { 
+      if (mounted) setState(() { _isLoading = false; _syncProgress = ''; }); 
+    }
   }
 
   Future<void> _submitManualToken() async {
@@ -98,7 +141,8 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
   }
 
   Future<void> _connectAccurate() async {
-    final authUrl = AccurateService.buildAuthUrl();
+    // Generate auth URL dengan dinamis clientId
+    final authUrl = AccurateService.buildAuthUrl(_clientIdController.text.trim());
     final uri = Uri.parse(authUrl);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.platformDefault);
@@ -111,11 +155,17 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
     try {
       final token = _config['accurate_access_token'] ?? '';
       if (token.isEmpty) throw 'Token tidak tersedia, hubungkan ulang';
-      final result = await AccurateService.openDatabase(token, _knownDbId);
-      await AccurateService.saveSession(_admin, _knownDbId, result['host']!, result['session']!);
+      
+      final targetDb = _dbIdController.text.trim();
+      final result = await AccurateService.openDatabase(token, targetDb);
+      await AccurateService.saveSession(_admin, targetDb, result['host']!, result['session']!);
+      
       await _loadConfig();
       _showSnack('Session diperbarui!', true);
-    } catch (e) { _showSnack('Gagal: $e', false); setState(() => _isLoading = false); }
+    } catch (e) { 
+      _showSnack('Gagal: $e', false); 
+      setState(() => _isLoading = false); 
+    }
   }
 
   Future<void> _startSync() async {
@@ -147,7 +197,6 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
     _showSnack('Koneksi diputus', true);
   }
 
-  // [UPDATE] Fungsi AJAX untuk Pencarian dan Filter
   void _onFilterChanged(String? newValue) {
     if (newValue != null) {
       setState(() {
@@ -168,7 +217,7 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
   }
 
   Future<void> _triggerAjaxSearch() async {
-    if (!_isSessionOpen) return; // Pastikan session terbuka
+    if (!_isSessionOpen) return; 
     
     setState(() => _isSearching = true);
     try {
@@ -208,7 +257,6 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
     return RefreshIndicator(
       color: const Color(0xFFB71C1C),
       onRefresh: _loadConfig,
-      // [FIX] Center + maxWidth
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
@@ -223,7 +271,61 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
               _buildStatusCard(),
               const SizedBox(height: 20),
 
-              _buildCard(step: 1, title: 'Hubungkan Akun Accurate', subtitle: _isConnected ? 'Akun Accurate sudah terhubung ✓' : 'Login ke Accurate lalu paste token', isDone: _isConnected, child: Column(children: [
+              // =================================================================
+              // [TAMBAHAN BARU] Langkah 1: Form Pengaturan Kredensial
+              // =================================================================
+              _buildCard(
+                step: 1, 
+                title: 'Pengaturan API Accurate', 
+                subtitle: 'Client ID dan Database ID', 
+                isDone: true, 
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _clientIdController, 
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                      decoration: InputDecoration(
+                        labelText: 'Client ID (OAuth)',
+                        labelStyle: TextStyle(color: Colors.grey[600], fontSize: 13),
+                        filled: true, 
+                        fillColor: const Color(0xFFF8F9FC), 
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), 
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)
+                      )
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _dbIdController, 
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                      decoration: InputDecoration(
+                        labelText: 'Database ID',
+                        labelStyle: TextStyle(color: Colors.grey[600], fontSize: 13),
+                        filled: true, 
+                        fillColor: const Color(0xFFF8F9FC), 
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), 
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)
+                      )
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity, 
+                      height: 44, 
+                      child: ElevatedButton.icon(
+                        onPressed: _saveApiSettings, 
+                        icon: const Icon(Icons.save_rounded, size: 18), 
+                        label: const Text('Simpan Pengaturan', style: TextStyle(fontWeight: FontWeight.w600)), 
+                        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E293B), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))
+                      )
+                    ),
+                  ]
+                )
+              ),
+              const SizedBox(height: 16),
+
+              // =================================================================
+              // Langkah 2: Hubungkan Akun (Dulu Langkah 1)
+              // =================================================================
+              _buildCard(step: 2, title: 'Hubungkan Akun Accurate', subtitle: _isConnected ? 'Akun Accurate sudah terhubung ✓' : 'Login ke Accurate lalu paste token', isDone: _isConnected, child: Column(children: [
                 if (!_isConnected) ...[
                   SizedBox(width: double.infinity, height: 48, child: ElevatedButton.icon(onPressed: _connectAccurate, icon: const Icon(Icons.open_in_new_rounded, size: 18), label: const Text('1. Login ke Accurate Online', style: TextStyle(fontWeight: FontWeight.w600)), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1565C0), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))))),
                   const SizedBox(height: 8),
@@ -240,17 +342,20 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
               ])),
               const SizedBox(height: 16),
 
-              _buildCard(step: 2, title: 'Database Accurate', subtitle: _isSessionOpen ? 'Database aktif ✓' : 'Buka koneksi ke database', isDone: _isSessionOpen, isDisabled: !_isConnected, child: _isConnected ? Column(children: [
-                Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFF8F9FC), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade200)), child: Row(children: [const Icon(Icons.storage_rounded, size: 18, color: Color(0xFF6B7280)), const SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Database ID', style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))), Text(_knownDbId, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E)))])), if (_isSessionOpen) const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 20)])),
+              // =================================================================
+              // Langkah 3: Database Accurate
+              // =================================================================
+              _buildCard(step: 3, title: 'Database Accurate', subtitle: _isSessionOpen ? 'Database aktif ✓' : 'Buka koneksi ke database', isDone: _isSessionOpen, isDisabled: !_isConnected, child: _isConnected ? Column(children: [
+                Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFF8F9FC), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade200)), child: Row(children: [const Icon(Icons.storage_rounded, size: 18, color: Color(0xFF6B7280)), const SizedBox(width: 10), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Database ID Aktif', style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))), Text(_dbIdController.text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E)))])), if (_isSessionOpen) const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 20)])),
                 const SizedBox(height: 10),
                 SizedBox(width: double.infinity, height: 44, child: ElevatedButton.icon(onPressed: _refreshSession, icon: const Icon(Icons.lock_open_rounded, size: 18), label: Text(_isSessionOpen ? 'Refresh Session' : 'Buka Database', style: const TextStyle(fontWeight: FontWeight.w600)), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF10B981), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))))),
               ]) : const SizedBox.shrink()),
               const SizedBox(height: 16),
 
-              // [UPDATE] UI Pencarian dan Filter AJAX
-          
-
-              _buildCard(step: 3, title: 'Sync Faktur → Poin', subtitle: 'Konversi faktur penjualan Accurate ke poin toko', isDone: _lastSyncResult != null, isDisabled: !_isSessionOpen, child: _isSessionOpen ? Column(children: [
+              // =================================================================
+              // Langkah 4: Sync Faktur
+              // =================================================================
+              _buildCard(step: 4, title: 'Sync Faktur → Poin', subtitle: 'Konversi faktur penjualan Accurate ke poin toko', isDone: _lastSyncResult != null, isDisabled: !_isSessionOpen, child: _isSessionOpen ? Column(children: [
                 Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFFDE68A))), child: const Row(children: [Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFFF59E0B)), SizedBox(width: 8), Expanded(child: Text('Anti-double otomatis — faktur yang sudah diproses tidak akan dihitung ulang.', style: TextStyle(fontSize: 12, color: Color(0xFF92400E), height: 1.4)))])),
                 const SizedBox(height: 10),
                 if (_isSyncing) ...[Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: const Color(0xFFF0F9FF), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFBAE6FD))), child: Row(children: [const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF3B82F6))), const SizedBox(width: 10), Expanded(child: Text(_syncProgress, style: const TextStyle(fontSize: 12, color: Color(0xFF1E40AF))))])), const SizedBox(height: 10)],
@@ -260,10 +365,10 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
               const SizedBox(height: 16),
 
               // =================================================================
-              // [TAMBAHAN BARU] Langkah 4: Auto-Provisioning Pelanggan (Bikin Akun)
+              // Langkah 5: Auto-Provisioning
               // =================================================================
               _buildCard(
-                step: 4, 
+                step: 5, 
                 title: 'Auto-Provisioning Pelanggan', 
                 subtitle: 'Tarik data dari Accurate dan buatkan akun bayangan otomatis', 
                 isDone: false, 

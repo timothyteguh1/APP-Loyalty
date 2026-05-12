@@ -8,14 +8,16 @@ import 'package:upsol_loyalty/admin/admin_supabase.dart';
 class AccurateService {
   final _supabase = Supabase.instance.client;
 
-  static const String _clientId = '28816117-e366-4304-bcbf-d796509ec44a';
+  // Default fallback jika di database belum disetting
+  static const String defaultClientId = '79aaa170-8897-4cf7-b0d1-b8ec78dd07d1';
+  static const String defaultDbId = '2663607';
+
   static String get _redirectUri {
     return '${Uri.base.origin}/oauth_callback.html';
   }
   static const String _oauthBaseUrl = 'https://account.accurate.id';
   static const String _scope =
       'sales_invoice_view customer_view item_view sales_invoice_save sales_return_view';
-  static const String _knownDbId = '74873';
 
   static Future<Map<String, dynamic>> _proxy({
     required String accurateUrl,
@@ -48,9 +50,10 @@ class AccurateService {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
-  static String buildAuthUrl() {
+  // Menerima parameter clientId dari UI
+  static String buildAuthUrl(String clientId) {
     final params = {
-      'client_id': _clientId,
+      'client_id': clientId,
       'response_type': 'token',
       'redirect_uri': _redirectUri,
       'scope': _scope,
@@ -59,6 +62,14 @@ class AccurateService {
         .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
         .join('&');
     return '$_oauthBaseUrl/oauth/authorize?$query';
+  }
+
+  // [FITUR BARU] Menyimpan API & DB Credential ke Database
+  static Future<void> saveCredentials(SupabaseClient admin, String clientId, String dbId) async {
+    await admin.from('app_config').upsert([
+      {'key': 'accurate_client_id', 'value': clientId},
+      {'key': 'accurate_target_db_id', 'value': dbId},
+    ], onConflict: 'key');
   }
 
   static Future<void> saveToken(
@@ -89,11 +100,22 @@ class AccurateService {
           'accurate_db_session',
           'accurate_db_host',
           'accurate_db_id',
+          'accurate_client_id',        // <-- Tambahan
+          'accurate_target_db_id',     // <-- Tambahan
         ]);
     final config = <String, String>{};
     for (final row in rows) {
       config[row['key']] = row['value'] ?? '';
     }
+
+    // Set fallback jika di DB kosong
+    if ((config['accurate_client_id'] ?? '').isEmpty) {
+      config['accurate_client_id'] = defaultClientId;
+    }
+    if ((config['accurate_target_db_id'] ?? '').isEmpty) {
+      config['accurate_target_db_id'] = defaultDbId;
+    }
+
     return config;
   }
 
@@ -982,16 +1004,15 @@ class AccurateService {
             try {
               final res = await supabase.auth.admin.inviteUserByEmail(email);
               if (res.user?.id != null) {
-                // 👇 PERBAIKAN JALUR ACCURATE 👇
                 await supabase.from('profiles').upsert({
                   'id': res.user!.id, 
                   'email': email,
                   'full_name': name,
                   'phone': phone,
                   'accurate_customer_id': systemId,
-                  'approval_status': 'APPROVED',    // <-- Langsung ACC
-                  'is_profile_completed': false,    // <-- Profil dianggap belum lengkap
-                  'has_password': false,            // <-- Belum punya password
+                  'approval_status': 'APPROVED',    
+                  'is_profile_completed': false,    
+                  'has_password': false,            
                 });
                 totalDiundang++;
                 print('   ✅ Sukses diundang.');
@@ -1040,6 +1061,40 @@ class AccurateService {
       return List<Map<String, dynamic>>.from(response['d']);
     }
     return [];
+  }
+
+  // --- FUNGSI BARU: Cari pelanggan spesifik berdasarkan ID ---
+  Future<Map<String, dynamic>?> getCustomerById(String id) async {
+    try {
+      final config = await _supabase.from('app_config').select().inFilter(
+        'key', ['accurate_db_host', 'accurate_access_token', 'accurate_db_session'],
+      );
+      String? host, token, session;
+      for (var row in config) {
+        if (row['key'] == 'accurate_db_host') host = row['value'];
+        if (row['key'] == 'accurate_access_token') token = row['value'];
+        if (row['key'] == 'accurate_db_session') session = row['value'];
+      }
+
+      if (host == null || token == null || session == null) return null;
+
+      // Filter spesifik ke internal ID Accurate agar pasti ketemu
+      String urlStr = '$host/accurate/api/customer/list.do?fields=id,customerNo,name,email,mobilePhone&filter.id.op=EQUAL&filter.id.val[0]=$id';
+
+      final response = await _proxy(
+        accurateUrl: urlStr,
+        headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session},
+      );
+
+      if (response['s'] == true && response['d'] != null) {
+        final List data = response['d'];
+        if (data.isNotEmpty) return Map<String, dynamic>.from(data.first);
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error getCustomerById: $e');
+      return null;
+    }
   }
 }
 

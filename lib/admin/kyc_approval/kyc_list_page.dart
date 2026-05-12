@@ -100,9 +100,11 @@ class _KycListPageState extends State<KycListPage> with SingleTickerProviderStat
   Future<void> _fetchProfiles() async {
     setState(() => _isLoading = true);
     try {
+      // [UPDATE]: Menuliskan 'id' dan seluruh nama kolom secara eksplisit
+      // untuk mencegah bug "null" id karena SDK gagal memetakan *.
       final data = await _admin
           .from('profiles')
-          .select()
+          .select('id, created_at, full_name, email, phone, ktp_number, accurate_customer_id, store_address, pic_name, approval_status, point_conversion_rate, rejection_reason, domisili, points')
           .order('created_at', ascending: false);
 
       if (mounted) {
@@ -113,7 +115,6 @@ class _KycListPageState extends State<KycListPage> with SingleTickerProviderStat
         });
       }
     } catch (e) {
-      // [PERBAIKAN] Print error ke log
       debugPrint("ERROR FETCH KYC: $e");
       if (mounted) setState(() => _isLoading = false);
     }
