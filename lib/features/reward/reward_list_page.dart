@@ -103,10 +103,7 @@ class _RewardListPageState extends State<RewardListPage> {
     );
   }
 
-  // -------------------------------------------------------------------------
-  // TAMPILAN MOBILE (ListView - Persis Seperti Kodemu Sebelumnya)
-  // -------------------------------------------------------------------------
-  Widget _buildMobileList() {
+Widget _buildMobileList() {
     return ListView.builder(
       padding: const EdgeInsets.all(20),
       itemCount: _rewards.length,
@@ -122,13 +119,18 @@ class _RewardListPageState extends State<RewardListPage> {
             boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
           ),
           child: Row(children: [
+            // --- GAMBAR MOBILE (Rasio 5:4) ---
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.network(
-                item['image_url'] ?? '', width: 80, height: 80, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(width: 80, height: 80, color: Colors.grey[200], child: const Icon(Icons.image)),
+                item['image_url'] ?? '', 
+                width: 100, // Lebar 5
+                height: 80, // Tinggi 4 (Rasio 5:4)
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(width: 100, height: 80, color: Colors.grey[200], child: const Icon(Icons.image)),
               ),
             ),
+            // ---------------------------------
             const SizedBox(width: 16),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(item['name'] ?? '-', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
@@ -155,18 +157,14 @@ class _RewardListPageState extends State<RewardListPage> {
     );
   }
 
-  // -------------------------------------------------------------------------
-  // TAMPILAN WEB/DESKTOP (GridView - Desain Kotak E-commerce)
-  // -------------------------------------------------------------------------
   Widget _buildDesktopGrid() {
     return GridView.builder(
       padding: const EdgeInsets.all(24),
-      // Mengatur ukuran dan jarak grid secara dinamis
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 300, // Lebar maksimal 1 kotak adalah 300 pixel
-        mainAxisExtent: 340,     // Tinggi pasti 1 kotak adalah 340 pixel
-        crossAxisSpacing: 24,    // Jarak horizontal antar kotak
-        mainAxisSpacing: 24,     // Jarak vertikal antar kotak
+        maxCrossAxisExtent: 300, 
+        mainAxisExtent: 360, // Sedikit ditinggikan agar pas dengan rasio 5:4
+        crossAxisSpacing: 24,    
+        mainAxisSpacing: 24,     
       ),
       itemCount: _rewards.length,
       itemBuilder: (context, index) {
@@ -181,18 +179,20 @@ class _RewardListPageState extends State<RewardListPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Bagian Atas: Gambar Full Width
+              // --- GAMBAR DESKTOP GRID (Rasio 5:4) ---
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                child: Image.network(
-                  item['image_url'] ?? '', 
-                  width: double.infinity, 
-                  height: 150, 
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(width: double.infinity, height: 150, color: Colors.grey[200], child: const Icon(Icons.image, size: 40, color: Colors.grey)),
+                child: AspectRatio(
+                  aspectRatio: 5 / 4, // Rasio 5:4
+                  child: Image.network(
+                    item['image_url'] ?? '', 
+                    width: double.infinity, 
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(width: double.infinity, color: Colors.grey[200], child: const Icon(Icons.image, size: 40, color: Colors.grey)),
+                  ),
                 ),
               ),
-              // Bagian Bawah: Detail Teks
+              // ---------------------------------------
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(16),

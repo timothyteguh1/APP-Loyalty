@@ -60,7 +60,7 @@ class _DetailRewardPageState extends State<DetailRewardPage> {
     );
   }
 
-  Widget _buildContent() {
+Widget _buildContent() {
     return Stack(children: [
       Container(height: 200, color: const Color(0xFFD32F2F)),
       SafeArea(
@@ -75,7 +75,22 @@ class _DetailRewardPageState extends State<DetailRewardPage> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Image.asset('assets/images/logo.png', height: 30, errorBuilder: (c, e, s) => const SizedBox()), const SizedBox(height: 16),
                 Text(widget.item['name'], style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)), const SizedBox(height: 10),
-                ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(widget.item['image_url'] ?? '', width: double.infinity, height: 150, fit: BoxFit.cover, errorBuilder: (c, e, s) => const SizedBox())),
+                
+                // --- BAGIAN GAMBAR DETAIL RASIO 5:4 ---
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12), 
+                  child: AspectRatio(
+                    aspectRatio: 5 / 4, // Rasio 5:4
+                    child: Image.network(
+                      widget.item['image_url'] ?? '', 
+                      width: double.infinity, 
+                      fit: BoxFit.cover, 
+                      errorBuilder: (c, e, s) => Container(color: Colors.grey[200], child: const Icon(Icons.image, color: Colors.grey))
+                    ),
+                  ),
+                ),
+                // --------------------------------------
+
               ])),
             const SizedBox(height: 24),
             Container(padding: const EdgeInsets.symmetric(horizontal: 24), width: double.infinity, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -160,7 +160,7 @@ class _RewardPageState extends State<RewardPage> {
     );
   }
 
-  Widget _dealCard(Map<String, dynamic> item) {
+Widget _dealCard(Map<String, dynamic> item) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -181,7 +181,27 @@ class _RewardPageState extends State<RewardPage> {
               child: Text(item['type'] == 'VOUCHER' ? 'Voucher' : 'Produk', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: item['type'] == 'VOUCHER' ? Colors.blue : Colors.green)),
             ),
         ]),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
+        
+        // --- BAGIAN GAMBAR RASIO 5:4 DITAMBAHKAN DI SINI ---
+        if (item['image_url'] != null && item['image_url'].toString().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: AspectRatio(
+                aspectRatio: 5 / 4, // Rasio 5:4
+                child: Image.network(
+                  item['image_url'], 
+                  width: double.infinity, 
+                  fit: BoxFit.cover,
+                  errorBuilder: (c, e, s) => Container(color: Colors.grey[200], child: const Icon(Icons.image, color: Colors.grey)),
+                ),
+              ),
+            ),
+          ),
+        // ---------------------------------------------------
+
         Text(item['name'] ?? 'Promo Spesial', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, height: 1.3), maxLines: 2, overflow: TextOverflow.ellipsis),
         if (item['description'] != null && item['description'].toString().isNotEmpty) ...[
           const SizedBox(height: 4),
@@ -203,7 +223,6 @@ class _RewardPageState extends State<RewardPage> {
       ]),
     );
   }
-
   Widget _catCard(String title, IconData icon, Color color, VoidCallback onTap) {
     return Expanded(
       child: Material(color: Colors.white, borderRadius: BorderRadius.circular(16),
