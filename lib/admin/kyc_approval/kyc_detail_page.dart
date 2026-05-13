@@ -303,19 +303,34 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
     );
   }
 
-  Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
+Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
     return Column(children: [
       _buildSideBySideCard(isDesktop),
       const SizedBox(height: 16),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: _buildSection('Dokumen KYC', [_infoRow(Icons.badge_outlined, 'No. KTP', store['ktp_number'] ?? '-')])),
+        
+        // --- BAGIAN KIRI (Dokumen KYC & Tombol Reset Password) ---
+        Expanded(
+          child: Column(
+            children: [
+              _buildSection('Dokumen KYC', [_infoRow(Icons.badge_outlined, 'No. KTP', store['ktp_number'] ?? '-')]),
+              const SizedBox(height: 16),
+              _buildAdminTools(), // <--- TOMBOL RESET PASSWORD MUNCUL DI SINI
+            ]
+          )
+        ),
+
         if (isDesktop) const SizedBox(width: 16),
+        
+        // --- BAGIAN KANAN (Info Lokasi) ---
         if (isDesktop) Expanded(child: _buildSection('Info Lokasi', [
              _infoRow(Icons.person_outline_rounded, 'Nama PIC', store['pic_name'] ?? '-'),
              _infoRow(Icons.location_on_outlined, 'Alamat', store['store_address'] ?? '-'),
              _infoRow(Icons.map_outlined, 'Domisili', store['domisili'] ?? '-'),
         ])),
       ]),
+
+      // Jika di layar HP (Mobile), Info Lokasi pindah ke bawah
       if (!isDesktop) ...[
         const SizedBox(height: 16), 
         _buildSection('Info Lokasi', [

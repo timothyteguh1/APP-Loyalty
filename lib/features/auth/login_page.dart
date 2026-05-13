@@ -171,8 +171,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     }
   }
 
-  void _showForgotPasswordDialog() {
-    final emailCtrl = TextEditingController(
+void _showForgotPasswordDialog() {
+    final identifierCtrl = TextEditingController(
       text: _identifierController.text.trim(),
     );
     bool isSending = false;
@@ -190,18 +190,18 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF3B82F6).withOpacity(0.1),
+                  color: const Color(0xFFF59E0B).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
-                  Icons.lock_reset_rounded,
-                  color: Color(0xFF3B82F6),
+                  Icons.support_agent_rounded,
+                  color: Color(0xFFF59E0B),
                   size: 20,
                 ),
               ),
               const SizedBox(width: 12),
               const Text(
-                'Lupa Password',
+                'Bantuan Password',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
               ),
             ],
@@ -211,7 +211,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Masukkan email akunmu. Kami akan mengirim link untuk reset password.',
+                'Masukkan Nomor HP atau Email akunmu. Kami akan mengirimkan notifikasi kepada Admin untuk membantu mereset passwordmu.',
                 style: TextStyle(
                   fontSize: 13,
                   color: Color(0xFF6B7280),
@@ -220,13 +220,12 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 16),
               TextField(
-                controller: emailCtrl,
-                keyboardType: TextInputType.emailAddress,
+                controller: identifierCtrl,
                 decoration: InputDecoration(
-                  hintText: 'email@contoh.com',
+                  hintText: '0812xxxx atau email@contoh.com',
                   hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
                   prefixIcon: Icon(
-                    Icons.email_outlined,
+                    Icons.person_search_rounded,
                     size: 20,
                     color: Colors.grey[400],
                   ),
@@ -247,7 +246,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: const BorderSide(
-                      color: Color(0xFF3B82F6),
+                      color: Color(0xFFF59E0B),
                       width: 1.5,
                     ),
                   ),
@@ -264,11 +263,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
               onPressed: isSending
                   ? null
                   : () async {
-                      final email = emailCtrl.text.trim();
-                      if (email.isEmpty || !email.contains('@')) {
+                      final identifier = identifierCtrl.text.trim();
+                      if (identifier.isEmpty) {
                         ScaffoldMessenger.of(ctx).showSnackBar(
                           const SnackBar(
-                            content: Text('Masukkan email yang valid'),
+                            content: Text('Masukkan Email atau No HP yang valid'),
                             backgroundColor: Color(0xFFEF4444),
                           ),
                         );
@@ -276,25 +275,28 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                       }
                       setD(() => isSending = true);
                       try {
-                        await _authController.sendPasswordResetEmail(
-                          email: email,
+                        // Memanggil fungsi baru ke Admin
+                        await _authController.requestPasswordResetToAdmin(
+                          identifier: identifier,
                         );
+                        
                         if (ctx.mounted) Navigator.pop(ctx);
+                        
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Row(
+                              content: const Row(
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.check_circle_rounded,
                                     color: Colors.white,
                                     size: 18,
                                   ),
-                                  const SizedBox(width: 10),
+                                  SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
-                                      'Link reset password dikirim ke $email',
-                                      style: const TextStyle(
+                                      'Permintaan terkirim! Admin akan segera menghubungimu.',
+                                      style: TextStyle(
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -312,17 +314,18 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                         }
                       } catch (e) {
                         setD(() => isSending = false);
-                        if (ctx.mounted)
+                        if (ctx.mounted) {
                           ScaffoldMessenger.of(ctx).showSnackBar(
                             SnackBar(
                               content: Text(e.toString()),
                               backgroundColor: const Color(0xFFEF4444),
                             ),
                           );
+                        }
                       }
                     },
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF3B82F6),
+                backgroundColor: const Color(0xFFF59E0B),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -338,7 +341,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                       ),
                     )
                   : const Text(
-                      'Kirim Link Reset',
+                      'Minta Bantuan Admin',
                       style: TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,

@@ -121,15 +121,67 @@ class AuthController {
     }
   }
 
-  Future<void> sendPasswordResetEmail({required String email}) async {
+  // ============================================================
+  // MINTA BANTUAN RESET PASSWORD KE ADMIN
+  // ============================================================
+  Future<void> requestPasswordResetToAdmin({required String identifier}) async {
     try {
-      await _supabase.auth.resetPasswordForEmail(email);
-    } on AuthException catch (e) {
-      if (e.message.contains('rate limit')) throw 'Terlalu sering mengirim. Tunggu beberapa menit.';
-      throw 'Gagal mengirim email reset: ${e.message}';
+      String cleanId = identifier.trim().toLowerCase();
+      final bool isPhone = _isPhoneNumber(cleanId);
+      
+      if (isPhone && cleanId.startsWith('+62')) {
+        cleanId = cleanId.replaceFirst('+62', '0');
+      }
+
+      // 1. Ambil nama toko (Dibungkus try-catch agar aplikasi tidak crash jika Supabase mengunci tabel profiles untuk anonim)
+      Map<String, dynamic>? userData;
+      try {
+        if (isPhone) {
+          userData = await _supabase.from('profiles').select('full_name, phone').eq('phone', cleanId).maybeSingle();
+        } else {
+          userData = await _supabase.from('profiles').select('full_name, phone').eq('email', cleanId).maybeSingle();
+        }
+      } catch (e) {
+        debugPrint('Pencarian nama diabaikan karena gembok RLS Supabase: $e');
+      }
+
+      final String userName = userData?['full_name'] ?? 'User BKA (Data dilindungi)';
+      final String userPhone = userData?['phone'] ?? cleanId;
+
+      // 2. Ambil list email admin dari app_config
+      final adminConfig = await _supabase
+          .from('app_config')
+          .select('value')
+          .eq('key', 'admin_emails')
+          .maybeSingle();
+
+      if (adminConfig != null && adminConfig['value'] != null) {
+        final adminEmails = (adminConfig['value'] as String)
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+
+        if (adminEmails.isEmpty) throw 'Email admin belum disetel di database.';
+
+        // 3. Tembak email ke masing-masing admin via Edge Function menggunakan template baru
+        bool isSuccess = false;
+        for (final adminEmail in adminEmails) {
+          final result = await EmailNotificationService.sendPasswordResetRequest(
+            toEmail: adminEmail,
+            userName: userName,
+            userPhone: userPhone,
+          );
+          if (result) isSuccess = true; // Anggap sukses jika minimal 1 terkirim
+        }
+
+        if (!isSuccess) throw 'Gagal meneruskan email melalui Edge Function.';
+      } else {
+        throw 'Konfigurasi email admin tidak ditemukan di database.';
+      }
     } catch (e) {
       if (e is String) rethrow;
-      throw 'Gagal mengirim email reset password.';
+      throw 'Error sistem: ${e.toString()}'; 
     }
   }
 
@@ -189,7 +241,6 @@ class AuthController {
         password: password,
       );
 
-      // --- TAMBAHKAN KODE INI UNTUK MEMASTIKAN STATUS TERBARU ---
       final user = _supabase.auth.currentUser;
       if (user != null) {
         final latestProfile = await _supabase
@@ -199,7 +250,6 @@ class AuthController {
             .maybeSingle();
             
         if (latestProfile != null && latestProfile['approval_status'] == 'PENDING') {
-           // Jika ternyata di DB masih PENDING, lempar error agar UI tetap di halaman login
            if (emailToLogin.endsWith('@bka.local')) {
              throw 'PHONE_NOT_VERIFIED_YET';
            }
@@ -210,7 +260,6 @@ class AuthController {
       if (e.message.contains('Invalid login') || e.message.contains('invalid_credentials')) {
         throw 'Email/No HP atau Password salah. Cek lagi ya!';
       } else if (e.message.contains('Email not confirmed') || e.message.contains('email_not_confirmed')) {
-        // [FITUR BARU] Cek apakah ini email bayangan dari pendaftaran no HP
         if (emailToLogin.endsWith('@bka.local')) {
           throw 'PHONE_NOT_VERIFIED_YET';
         }

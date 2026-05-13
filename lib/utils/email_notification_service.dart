@@ -90,6 +90,10 @@ class EmailNotificationService {
   static Future<bool> sendResubmission({required String toEmail, required String userName}) {
     return _send(toEmail: toEmail, type: 'RESUBMISSION', data: {'userName': userName});
   }
+  // 👇 TAMBAHKAN FUNGSI INI 👇
+  static Future<bool> sendPasswordResetRequest({required String toEmail, required String userName, required String userPhone}) {
+    return _send(toEmail: toEmail, type: 'PASSWORD_RESET_REQUEST', data: {'userName': userName, 'userPhone': userPhone});
+  }
 
   // ============================================================
   // CUSTOM / BROADCAST
