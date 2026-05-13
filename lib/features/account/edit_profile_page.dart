@@ -206,9 +206,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
           data: {'full_name': namaToko, 'avatar_url': newAvatarUrl}));
 
       // 3. SYNC KE ACCURATE (hanya kalau user dari Accurate)
+      // PERUBAHAN: parameter 'customerId' → 'customerNo' (sekarang berisi C.0001)
       if (_accurateCustomerId != null && _accurateCustomerId!.isNotEmpty) {
         await _accurateService.updateCustomerToAccurate(
-          customerId: _accurateCustomerId!, name: namaToko,
+          customerNo: _accurateCustomerId!, name: namaToko,
           email: email, phone: phone, address: address,
         );
       }
@@ -325,7 +326,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       const Text('Terkoneksi dengan Accurate',
                           style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF047857))),
-                      Text('ID Pelanggan: $_accurateCustomerId',
+                      Text('No. Pelanggan: $_accurateCustomerId',
                           style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF064E3B))),
                     ])),
                   ]),
@@ -415,4 +416,4 @@ class _EditProfilePageState extends State<EditProfilePage> {
     const SizedBox(width: 8),
     Expanded(child: Divider(color: Colors.grey[200])),
   ]);
-}
+} 

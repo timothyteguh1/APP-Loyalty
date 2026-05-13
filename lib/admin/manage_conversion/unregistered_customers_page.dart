@@ -45,15 +45,16 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
     if (!mounted) return;
     setState(() {
       if (_allCustomers.isEmpty) _isLoading = true;
-      _isSearching = true; 
+      _isSearching = true;
       _errorMessage = null;
     });
-    
+
     try {
       if (_statusFilter == 'ACTIVE') {
         // ==============================================================
         // [LOGIKA PUTAR BALIK] - Khusus "Aktif Saja"
         // Ambil langsung dari Supabase, abaikan limit 100 dari Accurate!
+        // accurate_customer_id sekarang sudah berisi customerNo (C.0001)
         // ==============================================================
         final registeredData = await _supabase
             .from('profiles')
@@ -62,11 +63,15 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
             .neq('accurate_customer_id', '');
 
         List<Map<String, dynamic>> activeCustomers = registeredData.map((p) {
+          // Normalisasi ke UPPERCASE untuk konsistensi
+          final custNo = AccurateService.normalizeCustomerNo(
+            p['accurate_customer_id']?.toString() ?? '',
+          );
           return {
             'name': p['full_name'] ?? 'Tanpa Nama',
-            'customerNo': '-', // Info ini tidak ada di Supabase, kita strip saja
-            'id': p['accurate_customer_id'].toString().trim(),
-            'mobilePhone': '-', // Strip
+            'customerNo': custNo, // No. Pelanggan (C.0001)
+            'id': custNo,         // id = customerNo agar konsisten
+            'mobilePhone': '-',
             'isRegistered': true,
           };
         }).toList();
@@ -76,7 +81,7 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
           final kw = _searchKeyword.toLowerCase();
           activeCustomers = activeCustomers.where((c) {
             return c['name'].toString().toLowerCase().contains(kw) ||
-                   c['id'].toString().toLowerCase().contains(kw);
+                c['customerNo'].toString().toLowerCase().contains(kw);
           }).toList();
         }
 
@@ -91,32 +96,47 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
       } else {
         // ==============================================================
         // [LOGIKA NORMAL] - Untuk "Tidak Aktif" atau "Semua Status"
-        // Ambil dari API Accurate seperti biasa dengan sistem Keyword
+        // Ambil dari API Accurate, lalu cocokkan berdasarkan customerNo
+        // PERUBAHAN: bandingkan customerNo (bukan internal ID angka)
         // ==============================================================
         final accurateCustomers = await _accurateService.getAccurateCustomers(
           keyword: _searchKeyword,
-          statusFilter: 'ALL', 
+          statusFilter: 'ALL',
         );
-        
+
         final registeredData = await _supabase
             .from('profiles')
             .select('accurate_customer_id')
             .not('accurate_customer_id', 'is', null)
             .neq('accurate_customer_id', '');
-            
-        final Set<String> registeredIds = registeredData
-            .map((p) => p['accurate_customer_id'].toString().trim())
+
+        // Set berisi customerNo yang sudah terdaftar (UPPERCASE)
+        final Set<String> registeredNos = registeredData
+            .map((p) => AccurateService.normalizeCustomerNo(
+                  p['accurate_customer_id']?.toString() ?? '',
+                ))
+            .where((s) => s.isNotEmpty)
             .toSet();
 
         final mappedCustomers = accurateCustomers.map((customer) {
-          final systemId = customer['id']?.toString().trim() ?? '';
-          return {...customer, 'isRegistered': registeredIds.contains(systemId)};
+          // PERUBAHAN UTAMA: gunakan customerNo sebagai identifier,
+          // bukan internal ID angka
+          final custNo = AccurateService.normalizeCustomerNo(
+            customer['customerNo']?.toString() ?? '',
+          );
+          return {
+            ...customer,
+            // Override field 'id' agar seluruh UI pakai customerNo (C.0001)
+            'id': custNo,
+            'isRegistered': custNo.isNotEmpty && registeredNos.contains(custNo),
+          };
         }).toList();
-        
+
         // Terapkan Filter INACTIVE secara lokal
         List<Map<String, dynamic>> finalResult = mappedCustomers;
         if (_statusFilter == 'INACTIVE') {
-          finalResult = mappedCustomers.where((c) => c['isRegistered'] == false).toList();
+          finalResult =
+              mappedCustomers.where((c) => c['isRegistered'] == false).toList();
         }
 
         finalResult.sort((a, b) {
@@ -151,9 +171,7 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
       setState(() {
         _statusFilter = newValue;
       });
-      // Karena kita pakai 2 mesin yang berbeda (Supabase vs Accurate), 
-      // wajib memanggil ulang data setiap kali filter diubah.
-      _fetchAndCompareCustomers(); 
+      _fetchAndCompareCustomers();
     }
   }
 
@@ -163,12 +181,13 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
 
     _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      _fetchAndCompareCustomers(); 
+      _fetchAndCompareCustomers();
     });
   }
 
-  void _copyToClipboard(String text) {
-    Clipboard.setData(ClipboardData(text: text));
+  // PERUBAHAN: Salin No. Pelanggan (C.0001), bukan internal ID angka
+  void _copyToClipboard(String customerNo) {
+    Clipboard.setData(ClipboardData(text: customerNo));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -176,7 +195,7 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
             const Icon(Icons.check_circle_rounded, color: Colors.white),
             const SizedBox(width: 12),
             Text(
-              'ID "$text" disalin!',
+              'No. Pelanggan "$customerNo" disalin!',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ],
@@ -233,7 +252,7 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                         controller: _searchController,
                         onChanged: _onSearchChanged,
                         decoration: InputDecoration(
-                          hintText: 'Cari nama toko atau kode pelanggan...',
+                          hintText: 'Cari nama toko atau no. pelanggan...',
                           hintStyle: const TextStyle(
                             color: Color(0xFF94A3B8),
                             fontSize: 14,
@@ -241,7 +260,8 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                           prefixIcon: _isSearching
                               ? const Padding(
                                   padding: EdgeInsets.all(12.0),
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
                                 )
                               : const Icon(
                                   Icons.search_rounded,
@@ -249,7 +269,8 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                                 ),
                           filled: true,
                           fillColor: const Color(0xFFF1F5F9),
-                          contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 0),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -265,16 +286,26 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: const Color(0xFFF1F5F9),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 0),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
                           ),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'ALL', child: Text('Semua Status', style: TextStyle(fontSize: 13))),
-                          DropdownMenuItem(value: 'ACTIVE', child: Text('Aktif Saja', style: TextStyle(fontSize: 13))),
-                          DropdownMenuItem(value: 'INACTIVE', child: Text('Tidak Aktif', style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(
+                              value: 'ALL',
+                              child: Text('Semua Status',
+                                  style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(
+                              value: 'ACTIVE',
+                              child: Text('Aktif Saja',
+                                  style: TextStyle(fontSize: 13))),
+                          DropdownMenuItem(
+                              value: 'INACTIVE',
+                              child: Text('Tidak Aktif',
+                                  style: TextStyle(fontSize: 13))),
                         ],
                         onChanged: _onFilterChanged,
                       ),
@@ -306,78 +337,76 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                         ),
                       )
                     : _errorMessage != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24.0),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFFEE2E2),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.cloud_off_rounded,
-                                  color: Color(0xFFEF4444),
-                                  size: 36,
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              Text(
-                                _errorMessage!,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Color(0xFF991B1B),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              ElevatedButton.icon(
-                                onPressed: _fetchAndCompareCustomers,
-                                icon: const Icon(
-                                  Icons.refresh_rounded,
-                                  size: 18,
-                                ),
-                                label: const Text('Coba Lagi'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFB71C1C),
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24.0),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFFEE2E2),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.cloud_off_rounded,
+                                      color: Color(0xFFEF4444),
+                                      size: 36,
+                                    ),
                                   ),
+                                  const SizedBox(height: 20),
+                                  Text(
+                                    _errorMessage!,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Color(0xFF991B1B),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  ElevatedButton.icon(
+                                    onPressed: _fetchAndCompareCustomers,
+                                    icon: const Icon(Icons.refresh_rounded,
+                                        size: 18),
+                                    label: const Text('Coba Lagi'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFFB71C1C),
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : _filteredCustomers.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.group_off_rounded,
+                                      size: 64,
+                                      color: Colors.grey.shade400,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    const Text(
+                                      'Data Kosong',
+                                      style: TextStyle(
+                                        color: Color(0xFF334155),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : _filteredCustomers.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.group_off_rounded,
-                              size: 64,
-                              color: Colors.grey.shade400,
-                            ),
-                            const SizedBox(height: 16),
-                            const Text(
-                              'Data Kosong',
-                              style: TextStyle(
-                                color: Color(0xFF334155),
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : isDesktop
-                    ? _buildDesktopTable()
-                    : _buildMobileList(),
+                              )
+                            : isDesktop
+                                ? _buildDesktopTable()
+                                : _buildMobileList(),
               ),
             ],
           ),
@@ -399,7 +428,8 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: DataTable(
-            headingRowColor: WidgetStateProperty.all(const Color(0xFFF8F9FC)),
+            headingRowColor:
+                WidgetStateProperty.all(const Color(0xFFF8F9FC)),
             dataRowMinHeight: 60,
             dataRowMaxHeight: 60,
             horizontalMargin: 24,
@@ -410,9 +440,7 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                   child: Text(
                     'Nama Pelanggan',
                     style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF6B7280),
-                    ),
+                        fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
                   ),
                 ),
               ),
@@ -420,52 +448,44 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                 label: Text(
                   'Kode',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF6B7280),
-                  ),
+                      fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
                 ),
               ),
+              // PERUBAHAN: label diubah dari "System ID" ke "No. Pelanggan"
               DataColumn(
                 label: Text(
-                  'System ID',
+                  'No. Pelanggan',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF6B7280),
-                  ),
+                      fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
                 ),
               ),
               DataColumn(
                 label: Text(
                   'Telepon',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF6B7280),
-                  ),
+                      fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
                 ),
               ),
               DataColumn(
                 label: Text(
                   'Status',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF6B7280),
-                  ),
+                      fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
                 ),
               ),
               DataColumn(
                 label: Text(
                   'Aksi',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF6B7280),
-                  ),
+                      fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
                 ),
               ),
             ],
             rows: _filteredCustomers.map((c) {
               final name = c['name'] ?? 'Tanpa Nama';
               final customerNo = c['customerNo'] ?? '-';
-              final systemId = c['id']?.toString() ?? '';
+              // PERUBAHAN: 'id' sekarang sudah berisi customerNo (C.0001)
+              final displayNo = c['id']?.toString() ?? '';
               final phone = c['mobilePhone'] ?? '-';
               final isRegistered = c['isRegistered'] == true;
               final statusColor = isRegistered
@@ -480,38 +500,34 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                     Text(
                       name,
                       style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
+                          fontWeight: FontWeight.w600, fontSize: 13),
                     ),
                   ),
                   DataCell(
                     Text(
                       customerNo,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                   ),
                   DataCell(
                     Text(
-                      systemId,
+                      displayNo,
                       style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
+                          fontSize: 12, fontWeight: FontWeight.w700),
                     ),
                   ),
                   DataCell(
                     Text(
                       phone,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey[600]),
                     ),
                   ),
                   DataCell(
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: statusBg,
                         borderRadius: BorderRadius.circular(8),
@@ -527,31 +543,25 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                     ),
                   ),
                   DataCell(
+                    // PERUBAHAN: salin customerNo (C.0001), bukan internal ID
                     !isRegistered
                         ? GestureDetector(
-                            onTap: () => _copyToClipboard(systemId),
+                            onTap: () => _copyToClipboard(displayNo),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
+                                  horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
-                                color: const Color(
-                                  0xFF3B82F6,
-                                ).withOpacity(0.08),
+                                color: const Color(0xFF3B82F6).withOpacity(0.08),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
-                                    Icons.copy_rounded,
-                                    size: 14,
-                                    color: Color(0xFF3B82F6),
-                                  ),
+                                  Icon(Icons.copy_rounded,
+                                      size: 14, color: Color(0xFF3B82F6)),
                                   SizedBox(width: 4),
                                   Text(
-                                    'Salin ID',
+                                    'Salin No.',
                                     style: TextStyle(
                                       color: Color(0xFF3B82F6),
                                       fontSize: 12,
@@ -581,7 +591,8 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
         final customer = _filteredCustomers[index];
         final name = customer['name'] ?? 'Tanpa Nama';
         final customerNo = customer['customerNo'] ?? '-';
-        final systemId = customer['id']?.toString() ?? '';
+        // PERUBAHAN: 'id' sekarang berisi customerNo (C.0001)
+        final displayNo = customer['id']?.toString() ?? '';
         final phone = customer['mobilePhone'] ?? '-';
         final isRegistered = customer['isRegistered'] == true;
         return Container(
@@ -645,9 +656,7 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
+                              horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: isRegistered
                                 ? const Color(0xFFECFDF5)
@@ -693,23 +702,19 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
+                              horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: const Color(0xFFF1F5F9),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Row(
                             children: [
-                              const Icon(
-                                Icons.tag_rounded,
-                                size: 14,
-                                color: Color(0xFF64748B),
-                              ),
+                              const Icon(Icons.tag_rounded,
+                                  size: 14, color: Color(0xFF64748B)),
                               const SizedBox(width: 4),
+                              // PERUBAHAN: tampilkan customerNo sebagai identifier utama
                               Text(
-                                '$customerNo (ID: $systemId)',
+                                '$customerNo  •  $displayNo',
                                 style: const TextStyle(
                                   color: Color(0xFF475569),
                                   fontWeight: FontWeight.w700,
@@ -721,22 +726,20 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                           ),
                         ),
                         const Spacer(),
+                        // PERUBAHAN: salin customerNo (C.0001), bukan internal ID
                         if (!isRegistered)
                           InkWell(
-                            onTap: () => _copyToClipboard(systemId),
+                            onTap: () => _copyToClipboard(displayNo),
                             borderRadius: BorderRadius.circular(6),
                             child: const Padding(
                               padding: EdgeInsets.all(4.0),
                               child: Row(
                                 children: [
-                                  Icon(
-                                    Icons.copy_rounded,
-                                    size: 14,
-                                    color: Color(0xFF3B82F6),
-                                  ),
+                                  Icon(Icons.copy_rounded,
+                                      size: 14, color: Color(0xFF3B82F6)),
                                   SizedBox(width: 4),
                                   Text(
-                                    'Salin ID',
+                                    'Salin No.',
                                     style: TextStyle(
                                       color: Color(0xFF3B82F6),
                                       fontSize: 12,
@@ -752,11 +755,8 @@ class _UnregisteredCustomersPageState extends State<UnregisteredCustomersPage> {
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Icon(
-                          Icons.phone_outlined,
-                          size: 14,
-                          color: Color(0xFF94A3B8),
-                        ),
+                        const Icon(Icons.phone_outlined,
+                            size: 14, color: Color(0xFF94A3B8)),
                         const SizedBox(width: 6),
                         Text(
                           phone,

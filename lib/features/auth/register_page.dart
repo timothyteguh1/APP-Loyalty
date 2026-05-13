@@ -34,7 +34,7 @@ class _RegisterPageState extends State<RegisterPage>
   final _picNameController = TextEditingController();
   final _storeAddressController = TextEditingController();
   final _accurateIdController = TextEditingController();
-  final _domisiliController = TextEditingController(); 
+  final _domisiliController = TextEditingController();
 
   final _ktpNumberController = TextEditingController();
 
@@ -116,13 +116,11 @@ class _RegisterPageState extends State<RegisterPage>
         if (!phone.startsWith('08'))
           return _showError('Nomor HP harus diawali dengan 08');
 
-        // [FITUR BARU] Email sekarang opsional
         final emailText = _emailController.text.trim();
         if (emailText.isNotEmpty && !emailText.contains('@')) {
           return _showError('Format email tidak valid');
         }
-        
-        // [FITUR BARU] Validasi password min 6 dihapus
+
         if (_passwordController.text.isEmpty) {
           return _showError('Password wajib diisi');
         }
@@ -161,6 +159,9 @@ class _RegisterPageState extends State<RegisterPage>
     showLoading(context);
 
     try {
+      // PERUBAHAN: Normalisasi ke UPPERCASE agar c.0001 dan C.0001 dianggap sama
+      final accurateId = _accurateIdController.text.trim().toUpperCase();
+
       final result = await _authController.signUp(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
@@ -170,14 +171,12 @@ class _RegisterPageState extends State<RegisterPage>
         storeAddress: _storeAddressController.text.trim(),
         domisili: _domisiliController.text.trim(),
         ktpNumber: _ktpNumberController.text.trim(),
-        accurateCustomerId: _accurateIdController.text.trim(),
+        accurateCustomerId: accurateId,
       );
 
       if (!mounted) return;
       hideLoading(context);
 
-      // Jika pakai dummy email (karena form email kosong), result['needsEmailVerification'] pasti false
-      // User akan langsung diarahkan ke dialog sukses / pending.
       if (result['needsEmailVerification'] == true) {
         _goToEmailVerification(result['email'] as String);
       } else {
@@ -200,7 +199,9 @@ class _RegisterPageState extends State<RegisterPage>
           return FadeTransition(
             opacity: anim,
             child: SlideTransition(
-              position: Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(
+              position: Tween<Offset>(
+                      begin: const Offset(0, 0.1), end: Offset.zero)
+                  .animate(
                 CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
               ),
               child: child,
@@ -398,7 +399,8 @@ class _RegisterPageState extends State<RegisterPage>
                         height: size,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(0.04 + (i * 0.008)),
+                          color: Colors.white
+                              .withOpacity(0.04 + (i * 0.008)),
                         ),
                       ),
                     );
@@ -470,7 +472,8 @@ class _RegisterPageState extends State<RegisterPage>
                                       color: Colors.white.withOpacity(0.2),
                                       borderRadius: BorderRadius.circular(20),
                                       border: Border.all(
-                                        color: Colors.white.withOpacity(0.3),
+                                        color:
+                                            Colors.white.withOpacity(0.3),
                                       ),
                                     ),
                                     child: Row(
@@ -575,14 +578,13 @@ class _RegisterPageState extends State<RegisterPage>
                               onPressed: _isProcessing
                                   ? null
                                   : (_currentStep == _totalSteps - 1
-                                        ? _handleRegister
-                                        : _nextStep),
+                                      ? _handleRegister
+                                      : _nextStep),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFB71C1C),
                                 foregroundColor: Colors.white,
-                                disabledBackgroundColor: const Color(
-                                  0xFFB71C1C,
-                                ).withOpacity(0.5),
+                                disabledBackgroundColor:
+                                    const Color(0xFFB71C1C).withOpacity(0.5),
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
@@ -656,7 +658,8 @@ class _RegisterPageState extends State<RegisterPage>
       curve: Curves.easeOutCubic,
       builder: (_, v, c) => Opacity(
         opacity: v,
-        child: Transform.translate(offset: Offset(0, 20 * (1 - v)), child: c),
+        child:
+            Transform.translate(offset: Offset(0, 20 * (1 - v)), child: c),
       ),
       child: Container(
         padding: const EdgeInsets.all(24),
@@ -697,7 +700,6 @@ class _RegisterPageState extends State<RegisterPage>
                 keyboardType: TextInputType.phone,
               ),
               const SizedBox(height: 18),
-              // [UPDATE] Label email menjadi tidak wajib (isRequired dihapus)
               _buildLabel('Email (Opsional)', isRequired: false),
               const SizedBox(height: 8),
               _buildTextField(
@@ -722,7 +724,8 @@ class _RegisterPageState extends State<RegisterPage>
                 controller: _confirmPasswordController,
                 hint: 'Ulangi password',
                 showPassword: _showConfirm,
-                onToggle: () => setState(() => _showConfirm = !_showConfirm),
+                onToggle: () =>
+                    setState(() => _showConfirm = !_showConfirm),
               ),
             ],
           ),
@@ -750,10 +753,26 @@ class _RegisterPageState extends State<RegisterPage>
             children: [
               _buildLabel('Kode Pelanggan Accurate', isRequired: true),
               const SizedBox(height: 8),
-              _buildTextField(
+              // PERUBAHAN: hint diubah ke format No. Pelanggan (C.0001)
+              // Input otomatis UPPERCASE saat ketik
+              TextFormField(
                 controller: _accurateIdController,
-                hint: 'Contoh: 50 (Dari Admin)',
-                icon: Icons.tag_rounded,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w500),
+                onChanged: (val) {
+                  final upper = val.toUpperCase();
+                  if (upper != val) {
+                    _accurateIdController.value =
+                        _accurateIdController.value.copyWith(
+                      text: upper,
+                      selection: TextSelection.collapsed(offset: upper.length),
+                    );
+                  }
+                },
+                decoration: _inputDecoration(
+                  hint: 'Contoh: C.0001 (Dari Admin)',
+                  prefixIcon: Icons.tag_rounded,
+                ),
               ),
               const SizedBox(height: 18),
 
@@ -928,7 +947,8 @@ class _RegisterPageState extends State<RegisterPage>
       prefixIcon: Icon(prefixIcon, size: 20, color: Colors.grey[400]),
       filled: true,
       fillColor: const Color(0xFFF8F9FC),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       counterText: '',
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),

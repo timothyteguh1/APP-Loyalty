@@ -19,6 +19,11 @@ class AccurateService {
   static const String _scope =
       'sales_invoice_view customer_view item_view sales_invoice_save sales_return_view';
 
+  // =========================================================================
+  // HELPER: Normalisasi customerNo → selalu UPPERCASE (C.0001 bukan c.0001)
+  // =========================================================================
+  static String normalizeCustomerNo(String raw) => raw.trim().toUpperCase();
+
   static Future<Map<String, dynamic>> _proxy({
     required String accurateUrl,
     Map<String, String>? headers,
@@ -100,8 +105,8 @@ class AccurateService {
           'accurate_db_session',
           'accurate_db_host',
           'accurate_db_id',
-          'accurate_client_id',        // <-- Tambahan
-          'accurate_target_db_id',     // <-- Tambahan
+          'accurate_client_id',
+          'accurate_target_db_id',
         ]);
     final config = <String, String>{};
     for (final row in rows) {
@@ -193,28 +198,33 @@ class AccurateService {
 
   // ============================================================
   // FAKTUR PENJUALAN
+  // PERUBAHAN: filter kini menggunakan customerNo (C.0001),
+  //            bukan internal ID (angka).
   // ============================================================
   static Future<Map<String, dynamic>> fetchSalesInvoices(
     String host,
     String session,
     String token, {
-    int? customerId,
+    String? customerNo,   // ← DIUBAH: dari int? customerId ke String? customerNo
     int page = 1,
     int pageSize = 50,
   }) async {
     final params = <String, String>{
       'sp.page': '$page',
       'sp.pageSize': '$pageSize',
+      // Tambahkan customer.customerNo ke fields agar bisa cross-check
       'fields':
-          'id,number,transDate,dueDate,grandTotal,totalAmount,statusName,status,customer.id,customer.name',
+          'id,number,transDate,dueDate,grandTotal,totalAmount,statusName,status,'
+          'customer.id,customer.name,customer.customerNo',
       'filter.transDate.val[0]': '01/01/2000',
       'filter.transDate.val[1]': '31/12/2099',
       'filter.transDate.op': 'BETWEEN',
     };
 
-    if (customerId != null) {
-      params['filter.customer.id.val[0]'] = '$customerId';
-      params['filter.customer.id.op'] = 'EQUAL';
+    // Filter by customerNo (case-insensitive via normalisasi UPPERCASE)
+    if (customerNo != null && customerNo.isNotEmpty) {
+      params['filter.customer.customerNo.val[0]'] = customerNo;
+      params['filter.customer.customerNo.op'] = 'EQUAL';
     }
 
     final queryString = params.entries
@@ -253,28 +263,32 @@ class AccurateService {
 
   // ============================================================
   // RETUR PENJUALAN (SALES RETURN)
+  // PERUBAHAN: filter kini menggunakan customerNo (C.0001)
   // ============================================================
   static Future<Map<String, dynamic>> fetchSalesReturns(
     String host,
     String session,
     String token, {
-    int? customerId,
+    String? customerNo,   // ← DIUBAH: dari int? customerId ke String? customerNo
     int page = 1,
     int pageSize = 50,
   }) async {
     final params = <String, String>{
       'sp.page': '$page',
       'sp.pageSize': '$pageSize',
+      // Tambahkan customer.customerNo ke fields agar bisa cross-check
       'fields':
-          'id,number,transDate,totalAmount,grandTotal,statusName,status,customer.id,customer.name',
+          'id,number,transDate,totalAmount,grandTotal,statusName,status,'
+          'customer.id,customer.name,customer.customerNo',
       'filter.transDate.val[0]': '01/01/2000',
       'filter.transDate.val[1]': '31/12/2099',
       'filter.transDate.op': 'BETWEEN',
     };
 
-    if (customerId != null) {
-      params['filter.customer.id.val[0]'] = '$customerId';
-      params['filter.customer.id.op'] = 'EQUAL';
+    // Filter by customerNo (case-insensitive via normalisasi UPPERCASE)
+    if (customerNo != null && customerNo.isNotEmpty) {
+      params['filter.customer.customerNo.val[0]'] = customerNo;
+      params['filter.customer.customerNo.op'] = 'EQUAL';
     }
 
     final queryString = params.entries
@@ -441,6 +455,9 @@ class AccurateService {
     return null;
   }
 
+  // =========================================================================
+  // FUNGSI UTAMA SYNC: Sekarang menggunakan customerNo sebagai identifier
+  // =========================================================================
   static Future<SyncResult> syncInvoicesToPoints({
     required SupabaseClient admin,
     required String host,
@@ -464,6 +481,7 @@ class AccurateService {
           .select('value')
           .eq('key', 'accurate_access_token')
           .maybeSingle();
+
       final String token = tokenConfig?['value']?.toString() ?? '';
 
       if (token.isEmpty) throw 'Token Authorization tidak ditemukan di sistem.';
@@ -502,14 +520,19 @@ class AccurateService {
       for (final user in users) {
         final String userId = user['id'];
         final String userName = user['full_name'] ?? 'Unknown';
-        final String accurateCustomerId = user['accurate_customer_id']
-            .toString()
-            .trim();
+
+        // PERUBAHAN UTAMA: accurate_customer_id sekarang berisi customerNo (C.0001)
+        // Normalisasi UPPERCASE agar perbandingan case-insensitive
+        final String accurateCustomerNo = normalizeCustomerNo(
+          user['accurate_customer_id'].toString(),
+        );
+
+        if (accurateCustomerNo.isEmpty) continue;
+
         final int conversionRate =
             (user['point_conversion_rate'] as num?)?.toInt() ?? globalRate;
-        final int currentPoints = (user['points'] as num?)?.toInt() ?? 0;
 
-        print('\n=== Memeriksa Toko: $userName (ID: $accurateCustomerId) ===');
+        print('\n=== Memeriksa Toko: $userName (No. Pelanggan: $accurateCustomerNo) ===');
         onProgress?.call('Sync Toko: $userName...');
 
         try {
@@ -517,8 +540,9 @@ class AccurateService {
 
           final existingHistory = await admin
               .from('point_history')
-              .select('reference_id, reference_type')
-              .eq('user_id', userId);
+              .select('reference_id, reference_type, created_at')
+              .eq('user_id', userId)
+              .order('created_at', ascending: true); // ambil yang terlama dulu
 
           final Set<String> claimedInvoices = {};
           final Set<String> claimedReturns = {};
@@ -526,12 +550,15 @@ class AccurateService {
           for (var history in existingHistory) {
             final type = history['reference_type'];
             final refId = history['reference_id']?.toString() ?? '';
+            // Jika ada double, karena sudah di-sort ascending (terlama dulu),
+            // yang pertama masuk ke Set adalah yang terlama — sudah benar.
             if (type == 'INVOICE') claimedInvoices.add(refId);
             if (type == 'RETURN') claimedReturns.add(refId);
           }
 
           // =============================================
           // 1. PROSES FAKTUR PENJUALAN
+          // PERUBAHAN: filter by customerNo bukan ID angka
           // =============================================
           int page = 1;
           bool hasMore = true;
@@ -540,7 +567,7 @@ class AccurateService {
               host,
               session,
               token,
-              customerId: int.tryParse(accurateCustomerId),
+              customerNo: accurateCustomerNo, // ← pakai customerNo
               page: page,
               pageSize: 50,
             );
@@ -574,11 +601,13 @@ class AccurateService {
                 continue;
               }
 
-              final String listCustId =
-                  invoice['customer']?['id']?.toString() ??
-                  invoice['customer.id']?.toString() ??
-                  '';
-              if (listCustId.isNotEmpty && listCustId != accurateCustomerId) {
+              // Cross-check customerNo di level list (case-insensitive)
+              final String listCustNo = normalizeCustomerNo(
+                invoice['customer']?['customerNo']?.toString() ??
+                invoice['customer.customerNo']?.toString() ??
+                '',
+              );
+              if (listCustNo.isNotEmpty && listCustNo != accurateCustomerNo) {
                 totalSkipped++;
                 continue;
               }
@@ -602,11 +631,13 @@ class AccurateService {
                 continue;
               }
 
-              final String detailCustId =
-                  detailData['customer']?['id']?.toString() ?? '';
-              if (detailCustId != accurateCustomerId) {
+              // Cross-check MUTLAK customerNo di level detail (case-insensitive)
+              final String detailCustNo = normalizeCustomerNo(
+                detailData['customer']?['customerNo']?.toString() ?? '',
+              );
+              if (detailCustNo.isNotEmpty && detailCustNo != accurateCustomerNo) {
                 print(
-                  '  -> [SKIP MUTLAK] Faktur $invoiceNumber aslinya milik ID $detailCustId, bukan milik $userName! DITOLAK!',
+                  '  -> [SKIP MUTLAK] Faktur $invoiceNumber aslinya milik $detailCustNo, bukan milik $userName ($accurateCustomerNo)! DITOLAK!',
                 );
                 totalSkipped++;
                 continue;
@@ -694,6 +725,7 @@ class AccurateService {
 
           // =============================================
           // 2. PROSES RETUR PENJUALAN
+          // PERUBAHAN: filter by customerNo bukan ID angka
           // =============================================
           int pageRetur = 1;
           bool hasMoreRetur = true;
@@ -702,7 +734,7 @@ class AccurateService {
               host,
               session,
               token,
-              customerId: int.tryParse(accurateCustomerId),
+              customerNo: accurateCustomerNo, // ← pakai customerNo
               page: pageRetur,
               pageSize: 50,
             );
@@ -731,13 +763,15 @@ class AccurateService {
 
               totalReturnsChecked++;
 
-              final String listReturnCustId =
-                  ret['customer']?['id']?.toString() ??
-                  ret['customer.id']?.toString() ??
-                  '';
-              if (listReturnCustId.isNotEmpty &&
-                  listReturnCustId != accurateCustomerId) {
-                continue; 
+              // Cross-check customerNo di level list (case-insensitive)
+              final String listReturnCustNo = normalizeCustomerNo(
+                ret['customer']?['customerNo']?.toString() ??
+                ret['customer.customerNo']?.toString() ??
+                '',
+              );
+              if (listReturnCustNo.isNotEmpty &&
+                  listReturnCustNo != accurateCustomerNo) {
+                continue;
               }
 
               onProgress?.call('Cek detail retur $returnNumber...');
@@ -758,11 +792,13 @@ class AccurateService {
                 continue;
               }
 
-              final String exactReturnCustId =
-                  returDetail['customer']?['id']?.toString() ?? '';
-              if (exactReturnCustId != accurateCustomerId) {
+              // Cross-check MUTLAK customerNo di level detail (case-insensitive)
+              final String exactReturnCustNo = normalizeCustomerNo(
+                returDetail['customer']?['customerNo']?.toString() ?? '',
+              );
+              if (exactReturnCustNo.isNotEmpty && exactReturnCustNo != accurateCustomerNo) {
                 print(
-                  '  -> [SKIP RETUR MUTLAK] Retur $returnNumber aslinya milik ID $exactReturnCustId, bukan milik $userName! DITOLAK!',
+                  '  -> [SKIP RETUR MUTLAK] Retur $returnNumber aslinya milik $exactReturnCustNo, bukan milik $userName ($accurateCustomerNo)! DITOLAK!',
                 );
                 continue;
               }
@@ -892,10 +928,11 @@ class AccurateService {
   }
 
   // =========================================================================
-  // FITUR: TEMBAK BALIK KE ACCURATE (MENDUKUNG ALAMAT)
+  // FITUR: TEMBAK BALIK KE ACCURATE
+  // PERUBAHAN: Sekarang menerima customerNo, lalu lookup internal ID dulu
   // =========================================================================
   Future<bool> updateCustomerToAccurate({
-    required String customerId,
+    required String customerNo,  // ← DIUBAH: dari customerId (angka) ke customerNo
     required String name,
     String? email,
     String? phone,
@@ -915,14 +952,26 @@ class AccurateService {
 
       if (host == null || token == null || session == null) return false;
 
+      // Langkah baru: dapatkan internal ID Accurate dari customerNo
+      final int? internalId = await _getInternalIdByCustomerNo(
+        normalizeCustomerNo(customerNo),
+        host: host,
+        token: token,
+        session: session,
+      );
+      if (internalId == null || internalId <= 0) {
+        debugPrint('updateCustomerToAccurate: internal ID tidak ditemukan untuk $customerNo');
+        return false;
+      }
+
       final Map<String, dynamic> bodyPayload = {
-        'id': int.tryParse(customerId) ?? 0, 
+        'id': internalId,
         'name': name,
       };
 
       if (email != null && email.isNotEmpty) bodyPayload['email'] = email;
       if (phone != null && phone.isNotEmpty) bodyPayload['mobilePhone'] = phone;
-      if (address != null && address.isNotEmpty) bodyPayload['billStreet'] = address; 
+      if (address != null && address.isNotEmpty) bodyPayload['billStreet'] = address;
 
       final response = await _proxy(
         accurateUrl: '$host/accurate/api/customer/save.do',
@@ -938,6 +987,43 @@ class AccurateService {
     }
   }
 
+  // Helper: Dapatkan internal numeric ID dari customerNo
+  Future<int?> _getInternalIdByCustomerNo(
+    String customerNo, {
+    String? host,
+    String? token,
+    String? session,
+  }) async {
+    try {
+      if (host == null || token == null || session == null) return null;
+      // Gunakan keyword search, lalu cocokkan customerNo secara lokal
+      final urlStr =
+          '$host/accurate/api/customer/list.do'
+          '?fields=id,customerNo,name'
+          '&keywords=${Uri.encodeComponent(customerNo)}'
+          '&sp.pageSize=20';
+
+      final response = await _proxy(
+        accurateUrl: urlStr,
+        headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session},
+      );
+
+      if (response['s'] == true && response['d'] != null) {
+        final List data = response['d'];
+        for (final item in data) {
+          final no = normalizeCustomerNo(item['customerNo']?.toString() ?? '');
+          if (no == customerNo) {
+            return (item['id'] as num?)?.toInt();
+          }
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('_getInternalIdByCustomerNo error: $e');
+      return null;
+    }
+  }
+
   Future<void> syncLocalToAccurate({
     required List<Map<String, dynamic>> profiles,
     Function(String)? onProgress,
@@ -946,13 +1032,13 @@ class AccurateService {
     int failCount = 0;
 
     for (var profile in profiles) {
-      final String? custId = profile['accurate_customer_id'];
-      if (custId == null || custId.isEmpty) continue;
+      final String? custNo = profile['accurate_customer_id'];
+      if (custNo == null || custNo.isEmpty) continue;
 
       onProgress?.call('Mensinkronkan ${profile['full_name']}...');
 
       final bool success = await updateCustomerToAccurate(
-        customerId: custId,
+        customerNo: custNo,
         name: profile['full_name'] ?? '',
         phone: profile['phone'],
         address: profile['address'],
@@ -965,18 +1051,24 @@ class AccurateService {
     onProgress?.call('Sync Selesai! Berhasil: $successCount, Gagal: $failCount');
   }
   
+  // =========================================================================
+  // AUTO SYNC: Menyisir Accurate dan undang user baru
+  // PERUBAHAN: Menyimpan customerNo (UPPERCASE) bukan internal ID
+  // Anti-double: cek berdasarkan customerNo yang sudah dinormalisasi
+  // =========================================================================
   Future<void> autoSyncAccurateToSupabase() async {
     try {
       print('\n🔍 === MULAI PROSES AUTO SYNC PENYISIRAN MASAL ===');
       
-      final supabase = AdminSupabase.client; 
+      final supabase = AdminSupabase.client;
       final profiles = await supabase
           .from('profiles')
           .select('accurate_customer_id')
           .not('accurate_customer_id', 'is', null);
 
-      final Set<String> registeredIds = profiles
-          .map((p) => p['accurate_customer_id'].toString().trim())
+      // Normalisasi semua customerNo ke UPPERCASE untuk perbandingan
+      final Set<String> registeredNos = profiles
+          .map((p) => normalizeCustomerNo(p['accurate_customer_id'].toString()))
           .toSet();
       
       int totalDiundang = 0;
@@ -994,26 +1086,33 @@ class AccurateService {
         }
 
         for (var customer in customers) {
-          final systemId = customer['id']?.toString().trim() ?? '';
-          final email = customer['email']?.toString().trim() ?? '';
-          final name = customer['name']?.toString() ?? 'Pelanggan Accurate';
-          final phone = customer['mobilePhone']?.toString() ?? '';
+          // PERUBAHAN UTAMA: gunakan customerNo, bukan internal id
+          final String customerNo = normalizeCustomerNo(
+            customer['customerNo']?.toString() ?? '',
+          );
+          final String email = customer['email']?.toString().trim() ?? '';
+          final String name = customer['name']?.toString() ?? 'Pelanggan Accurate';
+          final String phone = customer['mobilePhone']?.toString() ?? '';
 
-          if (!registeredIds.contains(systemId) && email.isNotEmpty) {
-            print('   ⏳ Mengundang: $name ($email)');
+          if (customerNo.isEmpty) continue;
+
+          // Anti-double: skip jika customerNo sudah terdaftar
+          if (!registeredNos.contains(customerNo) && email.isNotEmpty) {
+            print('   ⏳ Mengundang: $name ($email) — No. Pelanggan: $customerNo');
             try {
               final res = await supabase.auth.admin.inviteUserByEmail(email);
               if (res.user?.id != null) {
                 await supabase.from('profiles').upsert({
-                  'id': res.user!.id, 
+                  'id': res.user!.id,
                   'email': email,
                   'full_name': name,
                   'phone': phone,
-                  'accurate_customer_id': systemId,
-                  'approval_status': 'APPROVED',    
-                  'is_profile_completed': false,    
-                  'has_password': false,            
+                  'accurate_customer_id': customerNo, // ← simpan customerNo UPPERCASE
+                  'approval_status': 'APPROVED',
+                  'is_profile_completed': false,
+                  'has_password': false,
                 });
+                registeredNos.add(customerNo); // update set in-memory untuk iterasi ini
                 totalDiundang++;
                 print('   ✅ Sukses diundang.');
               }
@@ -1029,7 +1128,7 @@ class AccurateService {
           currentPage++;
         }
         
-        if (currentPage > 50) hasMore = false; 
+        if (currentPage > 50) hasMore = false;
       }
       
       print('\n🏁 === SYNC SELESAI. Total email baru diundang: $totalDiundang ===\n');
@@ -1063,8 +1162,11 @@ class AccurateService {
     return [];
   }
 
-  // --- FUNGSI BARU: Cari pelanggan spesifik berdasarkan ID ---
-  Future<Map<String, dynamic>?> getCustomerById(String id) async {
+  // =========================================================================
+  // CARI PELANGGAN BERDASARKAN NOMOR PELANGGAN (customerNo: C.0001)
+  // PERUBAHAN: Ganti filter ID angka → keyword search + cocokkan customerNo
+  // =========================================================================
+  Future<Map<String, dynamic>?> getCustomerByCustomerNo(String customerNo) async {
     try {
       final config = await _supabase.from('app_config').select().inFilter(
         'key', ['accurate_db_host', 'accurate_access_token', 'accurate_db_session'],
@@ -1078,8 +1180,14 @@ class AccurateService {
 
       if (host == null || token == null || session == null) return null;
 
-      // Filter spesifik ke internal ID Accurate agar pasti ketemu
-      String urlStr = '$host/accurate/api/customer/list.do?fields=id,customerNo,name,email,mobilePhone&filter.id.op=EQUAL&filter.id.val[0]=$id';
+      final String normalized = normalizeCustomerNo(customerNo);
+
+      // Cari lewat keyword (Accurate mendukung pencarian by customerNo via keywords)
+      final String urlStr =
+          '$host/accurate/api/customer/list.do'
+          '?fields=id,customerNo,name,email,mobilePhone'
+          '&keywords=${Uri.encodeComponent(normalized)}'
+          '&sp.pageSize=20';
 
       final response = await _proxy(
         accurateUrl: urlStr,
@@ -1088,14 +1196,25 @@ class AccurateService {
 
       if (response['s'] == true && response['d'] != null) {
         final List data = response['d'];
-        if (data.isNotEmpty) return Map<String, dynamic>.from(data.first);
+        // Cocokkan secara tepat (case-insensitive) karena keyword bisa mengembalikan partial match
+        for (final item in data) {
+          final no = normalizeCustomerNo(item['customerNo']?.toString() ?? '');
+          if (no == normalized) {
+            return Map<String, dynamic>.from(item);
+          }
+        }
       }
       return null;
     } catch (e) {
-      debugPrint('Error getCustomerById: $e');
+      debugPrint('Error getCustomerByCustomerNo: $e');
       return null;
     }
   }
+
+  /// Alias untuk backward-compatibility (jika ada kode lain yang masih memanggil getCustomerById)
+  @Deprecated('Gunakan getCustomerByCustomerNo(customerNo) — accurate_customer_id sekarang berisi No. Pelanggan (C.0001)')
+  Future<Map<String, dynamic>?> getCustomerById(String customerNo) =>
+      getCustomerByCustomerNo(customerNo);
 }
 
 class SyncResult {

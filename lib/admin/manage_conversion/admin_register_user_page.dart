@@ -20,8 +20,8 @@ class _AdminRegisterUserPageState extends State<AdminRegisterUserPage> {
   // ── Controllers ──
   final _emailController        = TextEditingController();
   final _passwordController     = TextEditingController();
-  
-  final _accurateIdController   = TextEditingController(); // [ADD] Controller Accurate ID
+
+  final _accurateIdController   = TextEditingController();
   final _namaTokoController     = TextEditingController();
   final _picNameController      = TextEditingController();
   final _phoneController        = TextEditingController();
@@ -37,7 +37,7 @@ class _AdminRegisterUserPageState extends State<AdminRegisterUserPage> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _accurateIdController.dispose(); // [ADD] Dispose Accurate ID
+    _accurateIdController.dispose();
     _namaTokoController.dispose();
     _picNameController.dispose();
     _phoneController.dispose();
@@ -82,7 +82,7 @@ class _AdminRegisterUserPageState extends State<AdminRegisterUserPage> {
   bool _validate() {
     if (_emailController.text.trim().isEmpty)         return _showSnackError('Email wajib diisi');
     if (_passwordController.text.trim().length < 6)   return _showSnackError('Password minimal 6 karakter');
-    if (_accurateIdController.text.trim().isEmpty)    return _showSnackError('Kode Pelanggan Accurate wajib diisi'); // [ADD] Validasi Accurate ID
+    if (_accurateIdController.text.trim().isEmpty)    return _showSnackError('No. Pelanggan Accurate wajib diisi');
     if (_namaTokoController.text.trim().isEmpty)      return _showSnackError('Nama Toko wajib diisi');
     if (_picNameController.text.trim().isEmpty)       return _showSnackError('Nama PIC wajib diisi');
     if (_storeAddressController.text.trim().isEmpty)  return _showSnackError('Alamat Toko wajib diisi');
@@ -116,13 +116,14 @@ class _AdminRegisterUserPageState extends State<AdminRegisterUserPage> {
   Future<void> _registerUser() async {
     FocusManager.instance.primaryFocus?.unfocus();
     if (!_validate()) return;
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       final email      = _emailController.text.trim();
       final password   = _passwordController.text.trim();
-      final accurateId = _accurateIdController.text.trim(); // [ADD] Ambil text Accurate ID
+      // PERUBAHAN: Normalisasi ke UPPERCASE agar C.0001 dan c.0001 dianggap sama
+      final accurateId = _accurateIdController.text.trim().toUpperCase();
       final namaToko   = _namaTokoController.text.trim();
       final picName    = _picNameController.text.trim();
       final phone      = _phoneController.text.trim();
@@ -134,7 +135,7 @@ class _AdminRegisterUserPageState extends State<AdminRegisterUserPage> {
       final res = await _admin.auth.admin.createUser(AdminUserAttributes(
         email: email,
         password: password,
-        emailConfirm: true, 
+        emailConfirm: true,
         userMetadata: {
           'full_name': namaToko,
         }
@@ -149,7 +150,8 @@ class _AdminRegisterUserPageState extends State<AdminRegisterUserPage> {
       // 3. INSERT ATAU UPDATE DATA KE TABEL PROFILES
       await _admin.from('profiles').upsert({
         'id': newUserId,
-        'accurate_customer_id': accurateId, // [ADD] Simpan Accurate ID ke database
+        // PERUBAHAN: simpan No. Pelanggan (C.0001) UPPERCASE, bukan internal ID angka
+        'accurate_customer_id': accurateId,
         'full_name': namaToko,
         'pic_name': picName,
         'phone': phone,
@@ -158,7 +160,7 @@ class _AdminRegisterUserPageState extends State<AdminRegisterUserPage> {
         'domisili': domisili,
         'avatar_url': avatarUrl,
         'is_profile_completed': true,
-        'approval_status': 'APPROVED', 
+        'approval_status': 'APPROVED',
         'created_at': DateTime.now().toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
       });
@@ -275,8 +277,12 @@ class _AdminRegisterUserPageState extends State<AdminRegisterUserPage> {
               _sectionHeader(Icons.store_rounded, 'Data Toko'),
               const SizedBox(height: 16),
 
-              // [ADD] Input Kode Pelanggan Accurate
-              CustomTextField(label: "Kode Pelanggan Accurate", hint: "Contoh: 50", controller: _accurateIdController),
+              // PERUBAHAN: hint diubah ke format No. Pelanggan (C.0001)
+              CustomTextField(
+                label: "No. Pelanggan Accurate",
+                hint: "Contoh: C.0001",
+                controller: _accurateIdController,
+              ),
               const SizedBox(height: 16),
 
               CustomTextField(label: "Nama Toko", hint: "Contoh: Toko Jaya Motor", controller: _namaTokoController),

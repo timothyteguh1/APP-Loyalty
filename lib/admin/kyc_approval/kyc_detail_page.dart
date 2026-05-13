@@ -25,11 +25,11 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
   late TextEditingController _nameCtrl;
   late TextEditingController _emailCtrl;
   late TextEditingController _phoneCtrl;
-  late TextEditingController _accIdCtrl;
+  late TextEditingController _accIdCtrl; // sekarang berisi No. Pelanggan (C.0001)
 
   // State & Controller untuk Pencarian Kanan (Accurate)
   final _accurateService = AccurateService();
-  final _searchAccurateIdCtrl = TextEditingController();
+  final _searchAccurateNoCtrl = TextEditingController(); // ← diubah nama
   bool _isSearchingAccurate = false;
   bool _isLoadingAccurate = false;
   Map<String, dynamic>? _selectedAccurate;
@@ -49,10 +49,10 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic));
     _animController.forward();
     
-    // Auto load data kanan jika Accurate ID sudah terisi
+    // Auto load data kanan jika No. Pelanggan sudah terisi
     if (_accIdCtrl.text.trim().isNotEmpty && _accIdCtrl.text.trim() != '-') {
-      _searchAccurateIdCtrl.text = _accIdCtrl.text.trim();
-      _searchAccurateById(silent: true);
+      _searchAccurateNoCtrl.text = _accIdCtrl.text.trim();
+      _searchAccurateByCustomerNo(silent: true);
     }
   }
 
@@ -63,17 +63,22 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _accIdCtrl.dispose();
-    _searchAccurateIdCtrl.dispose();
+    _searchAccurateNoCtrl.dispose();
     super.dispose(); 
   }
 
-  // --- FUNGSI MENCARI ID KE ACCURATE (SISI KANAN) ---
-  Future<void> _searchAccurateById({bool silent = false}) async {
-    final id = _searchAccurateIdCtrl.text.trim();
-    if (id.isEmpty) {
-      if (!silent) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Masukkan ID Accurate yang ingin dicari')));
+  // --- FUNGSI MENCARI BERDASARKAN NO. PELANGGAN (SISI KANAN) ---
+  Future<void> _searchAccurateByCustomerNo({bool silent = false}) async {
+    final input = _searchAccurateNoCtrl.text.trim();
+    if (input.isEmpty) {
+      if (!silent) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Masukkan No. Pelanggan Accurate (contoh: C.0001)')),
+      );
       return;
     }
+
+    // Normalisasi ke UPPERCASE sebelum mencari
+    final customerNo = AccurateService.normalizeCustomerNo(input);
 
     setState(() {
       _isSearchingAccurate = true;
@@ -82,7 +87,7 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
       _selectedAccurate = null;
     });
 
-    final result = await _accurateService.getCustomerById(id);
+    final result = await _accurateService.getCustomerByCustomerNo(customerNo);
 
     if (mounted) {
       setState(() {
@@ -91,33 +96,47 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
         if (result != null) {
           _selectedAccurate = result;
         } else {
-          if (!silent) _accurateError = 'Data dengan ID $id tidak ditemukan di Accurate';
+          if (!silent) _accurateError = 'No. Pelanggan "$customerNo" tidak ditemukan di Accurate';
         }
       });
     }
   }
 
   // --- FUNGSI SALIN DATA DARI KANAN KE KIRI ---
+  // PERUBAHAN: menyalin customerNo (bukan internal ID angka)
   void _overwriteLocalData() {
     if (_selectedAccurate == null) return;
     setState(() {
       _nameCtrl.text = _selectedAccurate!['name'] ?? _nameCtrl.text;
       _emailCtrl.text = _selectedAccurate!['email'] ?? _emailCtrl.text;
       _phoneCtrl.text = _selectedAccurate!['mobilePhone'] ?? _phoneCtrl.text;
-      _accIdCtrl.text = _selectedAccurate!['id']?.toString() ?? _accIdCtrl.text;
+      // Salin customerNo (UPPERCASE), bukan internal ID angka
+      final rawNo = _selectedAccurate!['customerNo']?.toString() ?? '';
+      if (rawNo.isNotEmpty) {
+        _accIdCtrl.text = AccurateService.normalizeCustomerNo(rawNo);
+      }
     });
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Data berhasil disalin ke form sebelah kiri!'), backgroundColor: Color(0xFF10B981)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Data berhasil disalin ke form sebelah kiri!'),
+        backgroundColor: Color(0xFF10B981),
+      ),
+    );
   }
 
   // --- FUNGSI SIMPAN DATA LOKAL (TOMBOL DI BAWAH FORM KIRI) ---
   Future<void> _saveLocalData() async {
     setState(() => _isProcessing = true);
     try {
+      // Normalisasi No. Pelanggan ke UPPERCASE sebelum disimpan
+      final String accId = AccurateService.normalizeCustomerNo(_accIdCtrl.text);
+      _accIdCtrl.text = accId; // update tampilan
+
       final updateData = <String, dynamic>{
         'full_name': _nameCtrl.text.trim(),
         'email': _emailCtrl.text.trim(),
         'phone': _phoneCtrl.text.trim(),
-        'accurate_customer_id': _accIdCtrl.text.trim(),
+        'accurate_customer_id': accId,
         'updated_at': DateTime.now().toIso8601String()
       };
       
@@ -138,7 +157,9 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
         ));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal menyimpan: $e'), backgroundColor: const Color(0xFFEF4444)));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal menyimpan: $e'), backgroundColor: const Color(0xFFEF4444)),
+      );
     } finally { 
       if (mounted) setState(() => _isProcessing = false); 
     }
@@ -148,11 +169,15 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
   Future<void> _updateStatus(String status, String? reason) async {
     setState(() => _isProcessing = true);
     try {
+      // Normalisasi No. Pelanggan ke UPPERCASE sebelum disimpan
+      final String accId = AccurateService.normalizeCustomerNo(_accIdCtrl.text);
+      _accIdCtrl.text = accId;
+
       final updateData = <String, dynamic>{
         'full_name': _nameCtrl.text.trim(),
         'email': _emailCtrl.text.trim(),
         'phone': _phoneCtrl.text.trim(),
-        'accurate_customer_id': _accIdCtrl.text.trim(),
+        'accurate_customer_id': accId,
         'approval_status': status, 
         'updated_at': DateTime.now().toIso8601String()
       };
@@ -202,7 +227,7 @@ class _KycDetailPageState extends State<KycDetailPage> with SingleTickerProvider
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Row(children: [Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFFFEF2F2), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.cancel_rounded, color: Color(0xFFEF4444), size: 20)), const SizedBox(width: 12), const Text('Tolak User', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18))]),
       content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('User ini akan ditolak.', style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
+        const Text('User ini akan ditolak.', style: TextStyle(fontSize: 14, color: Color(0xFF6B7280))),
         const SizedBox(height: 16), const Text('Alasan penolakan *', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)), const SizedBox(height: 8),
         TextField(controller: reasonController, maxLines: 3, enableInteractiveSelection: true, decoration: InputDecoration(hintText: 'Contoh: Foto KTP buram...', hintStyle: TextStyle(color: Colors.grey[400], fontSize: 13), filled: true, fillColor: const Color(0xFFF9FAFB), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5)))),
       ]),
@@ -315,7 +340,7 @@ Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
             children: [
               _buildSection('Dokumen KYC', [_infoRow(Icons.badge_outlined, 'No. KTP', store['ktp_number'] ?? '-')]),
               const SizedBox(height: 16),
-              _buildAdminTools(), // <--- TOMBOL RESET PASSWORD MUNCUL DI SINI
+              _buildAdminTools(),
             ]
           )
         ),
@@ -372,7 +397,6 @@ Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Kiri (Border kanan sebagai pengganti IntrinsicHeight & VerticalDivider)
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
@@ -381,7 +405,6 @@ Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
                   child: _buildLeftForm(),
                 )
               ),
-              // Kanan
               Expanded(child: _buildRightReference()),
             ],
           ),
@@ -393,7 +416,7 @@ Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
     );
   }
 
-  // --- WIDGET KIRI: FORM MURNI SUPABASE (DITAMBAH TOMBOL SIMPAN DATA) ---
+  // --- WIDGET KIRI: FORM MURNI SUPABASE ---
   Widget _buildLeftForm() {
     return Padding(
       padding: const EdgeInsets.all(20),
@@ -405,9 +428,9 @@ Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
           _buildEditBox('Nama Lengkap', _nameCtrl),
           _buildEditBox('Email Akun', _emailCtrl),
           _buildEditBox('No. WhatsApp', _phoneCtrl),
-          _buildEditBox('Accurate ID', _accIdCtrl), 
+          // PERUBAHAN: label diubah dari 'Accurate ID' ke 'No. Pelanggan Accurate'
+          _buildEditBox('No. Pelanggan Accurate', _accIdCtrl),
           
-          // [FITUR BARU] Tombol Simpan Data spesifik untuk update form kiri
           const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
@@ -431,28 +454,42 @@ Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
     );
   }
 
-  // --- WIDGET KANAN: ALAT PENCARI ACCURATE BERDASARKAN ID ---
+  // --- WIDGET KANAN: ALAT PENCARI ACCURATE BERDASARKAN NO. PELANGGAN ---
   Widget _buildRightReference() {
     return Container(
       color: const Color(0xFFF8FAFC),
       padding: const EdgeInsets.all(20),
-      // Set height minimal agar seimbang dengan form kiri
       constraints: const BoxConstraints(minHeight: 460),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(children: [Icon(Icons.search_rounded, color: Color(0xFF1D4ED8), size: 18), SizedBox(width: 8), Text('Cari Referensi P2T (Accurate)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8), fontSize: 13))]),
+          const Row(children: [
+            Icon(Icons.search_rounded, color: Color(0xFF1D4ED8), size: 18),
+            SizedBox(width: 8),
+            Text('Cari Referensi P2T (Accurate)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8), fontSize: 13)),
+          ]),
           const SizedBox(height: 12),
           
-          // Form Pencarian HANYA berdasarkan ID
+          // Form Pencarian berdasarkan No. Pelanggan (C.0001)
           Row(
             children: [
               Expanded(
                 child: TextField(
-                  controller: _searchAccurateIdCtrl,
+                  controller: _searchAccurateNoCtrl,
                   style: const TextStyle(fontSize: 12),
+                  // Input otomatis UPPERCASE saat ketik
+                  onChanged: (val) {
+                    final upper = val.toUpperCase();
+                    if (upper != val) {
+                      _searchAccurateNoCtrl.value = _searchAccurateNoCtrl.value.copyWith(
+                        text: upper,
+                        selection: TextSelection.collapsed(offset: upper.length),
+                      );
+                    }
+                  },
                   decoration: InputDecoration(
-                    hintText: 'Ketik ID Accurate...',
+                    // PERUBAHAN: hint diperbarui
+                    hintText: 'Contoh: C.0001',
                     isDense: true,
                     filled: true,
                     fillColor: Colors.white,
@@ -464,7 +501,7 @@ Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
               ),
               const SizedBox(width: 8),
               ElevatedButton(
-                onPressed: _isSearchingAccurate ? null : _searchAccurateById,
+                onPressed: _isSearchingAccurate ? null : _searchAccurateByCustomerNo,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1D4ED8),
                   foregroundColor: Colors.white,
@@ -474,7 +511,8 @@ Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
                 ),
                 child: _isSearchingAccurate 
                   ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Cari ID', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  // PERUBAHAN: label tombol diperbarui
+                  : const Text('Cari', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               )
             ],
           ),
@@ -490,7 +528,12 @@ Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
             _buildRefBox('Nama', _selectedAccurate!['name'], compareWith: _nameCtrl.text),
             _buildRefBox('Email', _selectedAccurate!['email'], compareWith: _emailCtrl.text),
             _buildRefBox('No. HP', _selectedAccurate!['mobilePhone'], compareWith: _phoneCtrl.text),
-            _buildRefBox('ID Accurate', _selectedAccurate!['id']?.toString(), compareWith: _accIdCtrl.text),
+            // PERUBAHAN: tampilkan customerNo, bukan internal ID angka
+            _buildRefBox(
+              'No. Pelanggan',
+              AccurateService.normalizeCustomerNo(_selectedAccurate!['customerNo']?.toString() ?? '-'),
+              compareWith: _accIdCtrl.text,
+            ),
           ] else ...[
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 40),
@@ -500,7 +543,7 @@ Widget _buildMainContent(bool isDesktop, Map<String, dynamic> store) {
                   children: [
                     Icon(Icons.info_outline_rounded, color: Colors.grey.shade400, size: 36),
                     const SizedBox(height: 8),
-                    Text('Gunakan fitur pencarian di atas\nuntuk menarik data referensi P2T.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
+                    Text('Ketik No. Pelanggan (C.0001)\nlalu tekan Cari.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
                   ]
                 )
               ),
