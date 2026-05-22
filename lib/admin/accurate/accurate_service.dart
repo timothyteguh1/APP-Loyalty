@@ -191,15 +191,16 @@ class AccurateService {
 
       final params = <String, String>{
         'sp.page': '$page',
-        'sp.pageSize': '100', // pageSize besar untuk mengurangi jumlah request
+        'sp.pageSize': '100', 
+        // --- PERBAIKAN DI SINI ---
         'fields':
             'id,number,transDate,dueDate,grandTotal,totalAmount,statusName,status,'
-            'customer.id,customer.name,customer.customerNo',
+            'customer', // CUKUP TULIS 'customer' SAJA
+        // -------------------------
         'filter.transDate.val[0]': _dateStartCurrentYear,
         'filter.transDate.val[1]': '31/12/2099',
         'filter.transDate.op': 'BETWEEN',
       };
-
       final queryString = params.entries
           .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
           .join('&');
@@ -218,11 +219,25 @@ class AccurateService {
       final List<dynamic> invoices = data['d'] ?? [];
       final int totalCount = (data['totalCount'] as num?)?.toInt() ?? 0;
 
-      for (final invoice in invoices) {
-        final String custNo = normalizeCustomerNo(
-          invoice['customer']?['customerNo']?.toString() ??
-          invoice['customer.customerNo']?.toString() ?? '',
-        );
+     for (final invoice in invoices) {
+        // --- LOGIKA PEMBACAAN CUSTOMER YANG TAHAN BANTING ---
+        String rawCustNo = '';
+        
+        // 1. Coba baca jika bentuknya nested object: "customer": {"no": "..."}
+        if (invoice['customer'] is Map) {
+          rawCustNo = invoice['customer']['customerNo']?.toString() ?? 
+                      invoice['customer']['no']?.toString() ?? '';
+        }
+        
+        // 2. Jika masih kosong, coba baca jika bentuknya flat key: "customer.no": "..."
+        if (rawCustNo.isEmpty) {
+          rawCustNo = invoice['customer.customerNo']?.toString() ?? 
+                      invoice['customer.no']?.toString() ?? '';
+        }
+
+        final String custNo = normalizeCustomerNo(rawCustNo);
+        // ---------------------------------------------------
+
         if (custNo.isEmpty) continue;
         grouped.putIfAbsent(custNo, () => []).add(Map<String, dynamic>.from(invoice));
       }
@@ -230,9 +245,9 @@ class AccurateService {
       totalLoaded += invoices.length;
       print('  -> [PRE-LOAD FAKTUR] Halaman $page: ${invoices.length} item, total dimuat: $totalLoaded / $totalCount');
 
-      hasMore = invoices.isNotEmpty && totalLoaded < totalCount;
+      hasMore = invoices.isNotEmpty;
       page++;
-      if (page > 50) hasMore = false; // safety cap: max 50 halaman = 5000 faktur
+      if (page > 100) hasMore = false; // safety cap: max 1000 halaman = 100000 faktur
     }
 
     print('  -> [PRE-LOAD FAKTUR] Selesai. Total faktur: $totalLoaded, '
@@ -262,9 +277,11 @@ class AccurateService {
       final params = <String, String>{
         'sp.page': '$page',
         'sp.pageSize': '100',
+        // --- PERBAIKAN DI SINI ---
         'fields':
             'id,number,transDate,totalAmount,grandTotal,statusName,status,'
-            'customer.id,customer.name,customer.customerNo',
+            'customer', // CUKUP TULIS 'customer' SAJA
+        // -------------------------
         'filter.transDate.val[0]': _dateStartCurrentYear,
         'filter.transDate.val[1]': '31/12/2099',
         'filter.transDate.op': 'BETWEEN',
@@ -299,7 +316,7 @@ class AccurateService {
       totalLoaded += returns.length;
       print('  -> [PRE-LOAD RETUR] Halaman $page: ${returns.length} item, total dimuat: $totalLoaded / $totalCount');
 
-      hasMore = returns.isNotEmpty && totalLoaded < totalCount;
+      hasMore = returns.isNotEmpty;
       page++;
       if (page > 50) hasMore = false;
     }
@@ -426,13 +443,38 @@ class AccurateService {
 
     try {
       print('\n=== MULAI SYNC (Arsitektur Pre-Load Lokal) ===\n');
-      print('  -> [INFO] Filter tanggal mulai: $_dateStartCurrentYear');
+      // === KODE DEBUG TEMBAK LANGSUNG (HAPUS NANTI) ===
+      print('🔍 [DEBUG] Mencari langsung faktur FP.00876.052026 di Accurate...');
 
       final tokenConfig = await admin
           .from('app_config').select('value')
           .eq('key', 'accurate_access_token').maybeSingle();
       final String token = tokenConfig?['value']?.toString() ?? '';
       if (token.isEmpty) throw 'Token Authorization tidak ditemukan di sistem.';
+
+      final testUrl = '$host/accurate/api/sales-invoice/list.do'
+          '?fields=id,number,customer.customerNo,statusName'
+          '&filter.number.op=EQUAL&filter.number.val[0]=FP.00876.052026';
+      
+      final testRes = await _proxy(
+        accurateUrl: testUrl,
+        headers: {'X-Session-ID': session, 'Authorization': 'Bearer $token'},
+      );
+      
+      if (testRes['s'] == true && testRes['d'] != null) {
+        final List testData = testRes['d'];
+        if (testData.isEmpty) {
+          print('❌ [DEBUG] Faktur TIDAK DITEMUKAN di database Accurate.');
+        } else {
+          for (var item in testData) {
+            // KITA CETAK SELURUH DATA MENTAHNYA
+            print('✅ [DEBUG] DATA MENTAH DARI API:');
+            print(item.toString()); 
+          }
+        }
+      }
+      // ================================================
+      print('  -> [INFO] Filter tanggal mulai: $_dateStartCurrentYear');
 
       // ─────────────────────────────────────────────────────────────────────
       // Step 1 & 2: Pre-load semua faktur & retur sekaligus (satu kali)
