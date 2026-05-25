@@ -168,13 +168,21 @@ class _AccurateConnectPageState extends State<AccurateConnectPage> {
     }
   }
 
-  Future<void> _startSync() async {
+Future<void> _startSync() async {
     final host = _config['accurate_db_host'] ?? '';
     final session = _config['accurate_db_session'] ?? '';
     if (host.isEmpty || session.isEmpty) { _showSnack('Buka database terlebih dahulu', false); return; }
     setState(() { _isSyncing = true; _syncProgress = 'Memulai sync...'; _lastSyncResult = null; });
     try {
-      final result = await AccurateService.syncInvoicesToPoints(admin: _admin, host: host, session: session, onProgress: (msg) { if (mounted) setState(() => _syncProgress = msg); });
+      final result = await AccurateService.syncInvoicesToPoints(
+        admin: _admin, 
+        host: host, 
+        session: session, 
+        // Tambahkan dua baris wajib ini agar tidak error:
+        startDate: DateTime(DateTime.now().year, 1, 1), // Default awal tahun
+        endDate: DateTime.now(),                        // Default hari ini
+        onProgress: (msg) { if (mounted) setState(() => _syncProgress = msg); }
+      );
       if (mounted) setState(() { _lastSyncResult = result; _isSyncing = false; _syncProgress = ''; });
     } catch (e) {
       if (e.toString() == 'SESSION_EXPIRED') { _showSnack('Session expired, refresh dulu', false); await _refreshSession(); }

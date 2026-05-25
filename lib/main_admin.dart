@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'admin/dashboard/admin_home_page.dart';
+import 'admin/users/user_details_page.dart'; // [TAMBAHAN] Import Halaman Baru
 import 'admin/kyc_approval/kyc_list_page.dart';
 import 'admin/manage_conversion/manage_menu_page.dart';
 import 'admin/reports/reports_page.dart';
@@ -73,16 +74,18 @@ class _AdminMainPageState extends State<AdminMainPage> {
   bool _isTransitioning = false;
   final _supabase = Supabase.instance.client;
 
-  final List<String> _menuTitles = ['Dashboard', 'Approval KYC', 'Kelola Sistem', 'Laporan Poin'];
-  final List<IconData> _menuIcons = [Icons.dashboard_rounded, Icons.verified_user_rounded, Icons.tune_rounded, Icons.analytics_rounded];
+  // [PERBAIKAN] Menambahkan 'Rincian User' ke dalam urutan Menu
+  final List<String> _menuTitles = ['Dashboard', 'Rincian User', 'Approval KYC', 'Kelola Sistem', 'Laporan Poin'];
+  final List<IconData> _menuIcons = [Icons.dashboard_rounded, Icons.people_alt_rounded, Icons.verified_user_rounded, Icons.tune_rounded, Icons.analytics_rounded];
 
   // Pages — lazily built
   Widget _buildPage(int index) {
     switch (index) {
       case 0: return const AdminHomePage();
-      case 1: return const KycListPage();
-      case 2: return const ManageMenuPage();
-      case 3: return const ReportsPage();
+      case 1: return const UserDetailsPage(); // [PERBAIKAN] Mengarahkan index 1 ke halaman baru
+      case 2: return const KycListPage();
+      case 3: return const ManageMenuPage();
+      case 4: return const ReportsPage();
       default: return const AdminHomePage();
     }
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../admin_supabase.dart';
+import '../../controllers/auth_controller.dart'; // Import Auth Controller untuk Logout
+import '../users/user_details_page.dart';
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -11,16 +13,13 @@ class AdminHomePage extends StatefulWidget {
 
 class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   Map<String, dynamic> _stats = {};
-  
-  // [TAMBAHAN BARU] Buku Telepon untuk menyimpan pasangan ID = Nama Toko
   Map<String, String> _userNames = {}; 
-  
   bool _isLoading = true;
 
   final _admin = AdminSupabase.client;
   final _supabase = Supabase.instance.client;
+  final _authController = AuthController(); // Inisialisasi Auth Controller
 
-  // Master animation controller
   late AnimationController _masterCtrl;
 
   @override
@@ -44,16 +43,14 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint("=> [AUTO-REFRESH] Admin kembali membuka aplikasi.");
       _fetchAll(); 
     }
   }
 
- Future<void> _fetchAll() async {
+  Future<void> _fetchAll() async {
     setState(() => _isLoading = true);
     _masterCtrl.reset();
     try {
-      // [SOLUSI LOADING LAMA]: Gunakan Future.wait agar 4 tugas ini lari BERSAMAAN!
       final results = await Future.wait([
         _admin.from('profiles').select('id').eq('approval_status', 'APPROVED'),
         _admin.from('profiles').select('id').eq('approval_status', 'PENDING'),
@@ -61,16 +58,14 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
         _admin.from('rewards').select('id'),
       ]);
 
-      // Mengambil hasil dari masing-masing pelari sesuai urutan di atas
       final approved = results[0] as List<dynamic>;
       final pending = results[1] as List<dynamic>;
       final profilesData = results[2] as List<dynamic>;
       final rewards = results[3] as List<dynamic>;
 
       int totalPoints = 0;
-      final Map<String, String> tempNamesMap = {}; // Buku telepon sementara
+      final Map<String, String> tempNamesMap = {}; 
       
-      // Kita hitung poin dan susun buku telepon dari hasil pelari ke-3
       for (var p in profilesData) { 
         totalPoints += (p['points'] as num?)?.toInt() ?? 0; 
         tempNamesMap[p['id'].toString()] = p['full_name']?.toString() ?? 'Unknown';
@@ -87,7 +82,6 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
           _userNames = tempNamesMap; 
           _isLoading = false;
         });
-        // Trigger semua animasi setelah data siap
         _masterCtrl.forward();
       }
     } catch (e) {
@@ -98,6 +92,12 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
       }
     }
   }
+
+// Fungsi Logout
+  void _handleLogout() async {
+    await _authController.signOut(); // Hapus 'context' di dalam kurung
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = _supabase.auth.currentUser;
@@ -122,14 +122,37 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // ======= WELCOME CARD (slide down + fade) =======
+                          // ======= HEADER & LOGOUT =======
                           _buildStaggered(
                             delay: 0.0,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Dashboard Admin', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E))),
+                                ElevatedButton.icon(
+                                  onPressed: _handleLogout,
+                                  icon: const Icon(Icons.logout_rounded, size: 18),
+                                  label: const Text('Keluar'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red[50],
+                                    foregroundColor: Colors.red[700],
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // ======= WELCOME CARD =======
+                          _buildStaggered(
+                            delay: 0.05,
                             child: _buildWelcomeCard(adminName),
                           ),
                           const SizedBox(height: 24),
 
-                          // ======= STAT CARDS (staggered left to right) =======
+                          // ======= STAT CARDS =======
                           if (isDesktop)
                             Row(children: [
                               Expanded(child: _buildStaggered(delay: 0.1, child: _AnimatedStatCard(label: 'User Aktif', targetValue: _stats['stores'] ?? 0, icon: Icons.store_rounded, color: const Color(0xFF3B82F6), progress: _masterCtrl.value))),
@@ -156,7 +179,15 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
                             ]),
                           const SizedBox(height: 32),
 
+                          // ======= WIDGET RINCIAN USER =======
+                          _buildStaggered(
+                            delay: 0.3,
+                            child: _buildUserSummaryCard(),
+                          ),
+                          const SizedBox(height: 32),
+
                           // ======= STREAM ACTIVITY =======
+                          // ... (Sisa kode Stream Activity sama persis seperti aslinya)
                           StreamBuilder<List<Map<String, dynamic>>>(
                             stream: _admin
                                 .from('point_history')
@@ -175,7 +206,7 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
                                 children: [
                                   // ======= ACTIVITY HEADER =======
                                   _buildStaggered(
-                                    delay: 0.3,
+                                    delay: 0.35,
                                     child: Row(children: [
                                       const Text('Aktivitas Terbaru (Real-time)', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
                                       const Spacer(),
@@ -187,7 +218,7 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
                                   // ======= ACTIVITY LIST =======
                                   if (activities.isEmpty)
                                     _buildStaggered(
-                                      delay: 0.35,
+                                      delay: 0.4,
                                       child: Container(
                                         width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 40),
                                         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
@@ -206,9 +237,7 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
                                       final int amount = item['amount'] ?? 0;
                                       final bool isPos = amount > 0;
                                       
-                                      // [PERBAIKAN] Ambil nama dari Buku Telepon _userNames
                                       final String userIdStr = item['user_id']?.toString() ?? '';
-                                      // Cek apakah ada di kamus, jika tidak tampilkan ID yang dipotong
                                       final String fallbackName = 'Toko ID: ${userIdStr.length > 5 ? userIdStr.substring(0, 5) : userIdStr}...';
                                       final String name = _userNames[userIdStr] ?? fallbackName;
                                       
@@ -220,7 +249,7 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
                                         case 'REWARD_CLAIM': tIcon = Icons.card_giftcard_rounded; tColor = const Color(0xFFB71C1C); tLabel = 'Klaim'; break;
                                         case 'SYSTEM_CUTOFF': tIcon = Icons.restart_alt_rounded; tColor = const Color(0xFF6B7280); tLabel = 'Cutoff'; break;
                                         case 'QR_SCAN': tIcon = Icons.qr_code_rounded; tColor = const Color(0xFF8B5CF6); tLabel = 'QR'; break;
-                                        case 'RETURN': tIcon = Icons.assignment_return_rounded; tColor = const Color(0xFFEF4444); tLabel = 'Retur'; break; // Tambahan untuk Retur
+                                        case 'RETURN': tIcon = Icons.assignment_return_rounded; tColor = const Color(0xFFEF4444); tLabel = 'Retur'; break;
                                         default: tIcon = Icons.edit_rounded; tColor = const Color(0xFFF59E0B); tLabel = 'Manual';
                                       }
 
@@ -236,7 +265,7 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
                                       }
 
                                       return _buildStaggered(
-                                        delay: 0.35 + (i * 0.05),
+                                        delay: 0.4 + (i * 0.05),
                                         slideUp: true,
                                         child: Container(
                                           margin: const EdgeInsets.only(bottom: 10),
@@ -260,7 +289,6 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
                                               Text(timeStr, style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
                                             ])),
                                             const SizedBox(width: 10),
-                                            // Animated amount text
                                             TweenAnimationBuilder<double>(
                                               tween: Tween(begin: 0, end: amount.toDouble()),
                                               duration: Duration(milliseconds: 600 + (i * 100)),
@@ -284,6 +312,52 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
                   ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ======= WIDGET RINGKASAN USER BARU =======
+  Widget _buildUserSummaryCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFF3F4F6)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 15, offset: const Offset(0, 5))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Rincian Poin User', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+              TextButton(
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const UserDetailsPage()));
+                },
+                child: const Text('Lihat Semua', style: TextStyle(color: Color(0xFFD32F2F), fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text('Pantau perolehan poin setiap toko secara langsung.', style: TextStyle(fontSize: 13, color: Colors.grey)),
+          const SizedBox(height: 16),
+          // Ambil 3 user teratas
+          ..._userNames.entries.take(3).map((entry) {
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                backgroundColor: const Color(0xFFD32F2F).withOpacity(0.1),
+                child: const Icon(Icons.store, color: Color(0xFFD32F2F), size: 20),
+              ),
+              title: Text(entry.value, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              subtitle: const Text('ID Toko Valid', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+            );
+          }),
+        ],
       ),
     );
   }
@@ -379,7 +453,7 @@ class _AdminHomePageState extends State<AdminHomePage> with SingleTickerProvider
   }
 }
 
-// ======= ANIMATED STAT CARD (count-up number) =======
+// ======= ANIMATED STAT CARD =======
 class _AnimatedStatCard extends StatelessWidget {
   final String label;
   final int targetValue;

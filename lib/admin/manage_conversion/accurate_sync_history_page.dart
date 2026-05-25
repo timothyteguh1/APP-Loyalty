@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Untuk Filtering TextInput
 import 'package:intl/intl.dart';
 import '../accurate/accurate_service.dart';
 import '../admin_supabase.dart';
@@ -15,11 +16,19 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   final _supabase = AdminSupabase.client;
   bool _isLoading = true;
   bool _isSyncing = false;
+  bool _isSavingGrace = false; // Status loading saat simpan Grace Period
   String _syncProgress = '';
   List<Map<String, dynamic>> _historyData = [];
   SyncResult? _lastSyncResult;
 
-  // Filter
+  // Variabel untuk Filter Tanggal Sync
+  DateTime _startDate = DateTime(DateTime.now().year, 1, 1);
+  DateTime _endDate = DateTime.now();
+
+  // Variabel untuk Grace Period
+  final _graceCtrl = TextEditingController(text: '0');
+
+  // Filter Search & Dropdown
   String _searchQuery = '';
   final _searchCtrl = TextEditingController();
   String? _selectedType; // 'INVOICE' or 'RETURN'
@@ -27,13 +36,56 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   @override
   void initState() {
     super.initState();
+    _loadConfig();
     _fetchHistory();
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _graceCtrl.dispose();
     super.dispose();
+  }
+
+  // --- MENGAMBIL DATA GRACE PERIOD DARI DATABASE ---
+  Future<void> _loadConfig() async {
+    try {
+      final res = await _supabase
+          .from('app_config')
+          .select('value')
+          .eq('key', 'grace_period_days')
+          .maybeSingle();
+
+      if (res != null && mounted) {
+        setState(() {
+          _graceCtrl.text = res['value']?.toString() ?? '0';
+        });
+      }
+    } catch (e) {
+      debugPrint('Gagal memuat Grace Period: $e');
+    }
+  }
+
+  // --- MENYIMPAN DATA GRACE PERIOD KE DATABASE ---
+  Future<void> _saveGracePeriod() async {
+    final val = _graceCtrl.text.trim();
+    if (val.isEmpty) {
+      _showSnack('Grace Period tidak boleh kosong', false);
+      return;
+    }
+
+    setState(() => _isSavingGrace = true);
+    try {
+      await _supabase.from('app_config').upsert(
+        {'key': 'grace_period_days', 'value': val},
+        onConflict: 'key',
+      );
+      _showSnack('Grace Period berhasil diperbarui menjadi $val hari!', true);
+    } catch (e) {
+      _showSnack('Gagal menyimpan Grace Period: $e', false);
+    } finally {
+      if (mounted) setState(() => _isSavingGrace = false);
+    }
   }
 
   Future<void> _fetchHistory() async {
@@ -60,6 +112,35 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
     }
   }
 
+  // Fungsi memunculkan Kalender Date Picker
+  Future<void> _selectDateRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF059669),
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _startDate = picked.start;
+        _endDate = picked.end;
+      });
+    }
+  }
+
   Future<void> _handleSync() async {
     if (_isSyncing) return;
     setState(() {
@@ -81,6 +162,8 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
         admin: _supabase,
         host: host,
         session: session,
+        startDate: _startDate, 
+        endDate: _endDate,     
         onProgress: (msg) {
           if (mounted) setState(() => _syncProgress = msg);
         },
@@ -123,7 +206,6 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
     }).toList();
   }
 
-  // Stats
   int get _totalPointsIn => _historyData.where((h) => (h['amount'] as num? ?? 0) > 0).fold(0, (sum, h) => sum + ((h['amount'] as num?)?.toInt() ?? 0));
   int get _totalPointsOut => _historyData.where((h) => (h['amount'] as num? ?? 0) < 0).fold(0, (sum, h) => sum + ((h['amount'] as num?)?.toInt() ?? 0).abs());
   int get _invoiceCount => _historyData.where((h) => h['reference_type'] == 'INVOICE').length;
@@ -140,7 +222,10 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
           constraints: const BoxConstraints(maxWidth: 1000),
           child: RefreshIndicator(
             color: const Color(0xFFB71C1C),
-            onRefresh: _fetchHistory,
+            onRefresh: () async {
+              await _loadConfig();
+              await _fetchHistory();
+            },
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
@@ -153,11 +238,11 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
                   const Text('Tarik data Faktur & Retur dari Accurate, konversi otomatis ke poin toko.', style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF))),
                   const SizedBox(height: 24),
 
-                  // ======= SYNC CARD =======
+                  // ======= DATE FILTER & SYNC CARD =======
                   _buildSyncCard(),
                   const SizedBox(height: 16),
 
-                  // ======= SYNC RESULT (jika ada) =======
+                  // ======= SYNC RESULT =======
                   if (_lastSyncResult != null) ...[
                     _buildSyncResultCard(_lastSyncResult!),
                     const SizedBox(height: 16),
@@ -185,6 +270,10 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
                       ]),
                     const SizedBox(height: 28),
                   ],
+
+                  // ======= GRACE PERIOD CARD =======
+                  _buildGracePeriodCard(isDesktop),
+                  const SizedBox(height: 16),
 
                   // ======= RULES INFO =======
                   _buildRulesCard(),
@@ -230,6 +319,9 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   // ============================================================
 
   Widget _buildSyncCard() {
+    final startStr = DateFormat('dd MMM yyyy').format(_startDate);
+    final endStr = DateFormat('dd MMM yyyy').format(_endDate);
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -237,48 +329,149 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [BoxShadow(color: const Color(0xFF059669).withOpacity(0.25), blurRadius: 16, offset: const Offset(0, 6))],
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.sync_rounded, color: Colors.white, size: 14),
-                    SizedBox(width: 6),
-                    Text('Accurate Online', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+          Row(
+            children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
+                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.sync_rounded, color: Colors.white, size: 14),
+                        SizedBox(width: 6),
+                        Text('Accurate Online', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                      ]),
+                    ),
                   ]),
-                ),
-              ]),
-              const SizedBox(height: 14),
-              const Text('Sinkronisasi Otomatis', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              Text(
-                _isSyncing ? _syncProgress : 'Tarik faktur lunas & retur → konversi ke poin',
-                style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+                  const SizedBox(height: 14),
+                  const Text('Sinkronisasi Otomatis', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text(
+                    _isSyncing ? _syncProgress : 'Tarik faktur lunas & retur → konversi ke poin',
+                    style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+                  ),
+                ]),
               ),
-            ]),
+              const SizedBox(width: 16),
+              SizedBox(
+                height: 48, width: 140,
+                child: ElevatedButton.icon(
+                  onPressed: _isSyncing ? null : _handleSync,
+                  icon: _isSyncing
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Color(0xFF059669), strokeWidth: 2))
+                      : const Icon(Icons.play_arrow_rounded, size: 20),
+                  label: Text(_isSyncing ? 'Proses...' : 'Sync', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF059669),
+                    disabledBackgroundColor: Colors.white.withOpacity(0.7),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 16),
-          SizedBox(
-            height: 48, width: 140,
-            child: ElevatedButton.icon(
-              onPressed: _isSyncing ? null : _handleSync,
-              icon: _isSyncing
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Color(0xFF059669), strokeWidth: 2))
-                  : const Icon(Icons.play_arrow_rounded, size: 20),
-              label: Text(_isSyncing ? 'Proses...' : 'Sync', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFF059669),
-                disabledBackgroundColor: Colors.white.withOpacity(0.7),
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          const SizedBox(height: 20),
+          // TOMBOL PILIH RENTANG TANGGAL
+          InkWell(
+            onTap: _isSyncing ? null : _selectDateRange,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 18),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Rentang: $startStr  -  $endStr',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.edit_rounded, color: Colors.white70, size: 16),
+                ],
               ),
             ),
+          )
+        ],
+      ),
+    );
+  }
+
+  // --- WIDGET GRACE PERIOD BARU ---
+  Widget _buildGracePeriodCard(bool isDesktop) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF0F0F0)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(width: 28, height: 28, decoration: BoxDecoration(color: const Color(0xFF3B82F6).withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.timer_rounded, size: 16, color: Color(0xFF3B82F6))),
+              const SizedBox(width: 10),
+              const Text('Grace Period (Toleransi Keterlambatan)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+            ],
           ),
+          const SizedBox(height: 10),
+          const Text(
+            'Kompensasi penambahan hari dari Tanggal Jatuh Tempo faktur agar user tetap mendapatkan poin jika melunasi dalam rentang waktu ini.',
+            style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              SizedBox(
+                width: 120,
+                height: 44,
+                child: TextField(
+                  controller: _graceCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    filled: true,
+                    fillColor: const Color(0xFFF8F9FC),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                    suffixText: 'Hari',
+                    suffixStyle: const TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                height: 44,
+                child: ElevatedButton.icon(
+                  onPressed: _isSavingGrace ? null : _saveGracePeriod,
+                  icon: _isSavingGrace
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.save_rounded, size: 18),
+                  label: Text(_isSavingGrace ? 'Menyimpan...' : 'Simpan', style: const TextStyle(fontWeight: FontWeight.w600)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E293B),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              )
+            ],
+          )
         ],
       ),
     );
@@ -369,7 +562,7 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
         ]),
         const SizedBox(height: 14),
         _ruleItem('✅', 'Faktur LUNAS + bayar sebelum jatuh tempo', 'Dapat poin', const Color(0xFF10B981)),
-        _ruleItem('❌', 'Faktur LUNAS + bayar setelah jatuh tempo', 'Tidak dapat poin', const Color(0xFFEF4444)),
+        _ruleItem('❌', 'Faktur LUNAS + bayar setelah jatuh tempo (+ toleransi)', 'Tidak dapat poin', const Color(0xFFEF4444)),
         _ruleItem('❌', 'Faktur BELUM LUNAS (bayar sebagian)', 'Tidak dapat poin', const Color(0xFFEF4444)),
         _ruleItem('➖', 'Ada Retur Penjualan', 'Poin dipotong sesuai nominal', const Color(0xFFF59E0B)),
       ]),
@@ -412,7 +605,6 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
         ),
       ),
       const SizedBox(width: 10),
-      // Type filter
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
