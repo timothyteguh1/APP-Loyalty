@@ -134,7 +134,7 @@ class _RegisterPageState extends State<RegisterPage>
         if (_namaTokoController.text.trim().isEmpty)
           return _showError('Nama Toko wajib diisi');
         if (_picNameController.text.trim().isEmpty)
-          return _showError('Nama PIC wajib diisi');
+          return _showError('Nama Pemilik Toko wajib diisi');
         if (_storeAddressController.text.trim().isEmpty)
           return _showError('Alamat Toko wajib diisi');
         if (_domisiliController.text.trim().isEmpty)
@@ -751,7 +751,7 @@ class _RegisterPageState extends State<RegisterPage>
           const SizedBox(height: 20),
           _buildFormCard(
             children: [
-              _buildLabel('Kode Pelanggan Accurate', isRequired: true),
+              _buildLabel('Kode Pelanggan', isRequired: true),
               const SizedBox(height: 8),
               // PERUBAHAN: hint diubah ke format No. Pelanggan (C.0001)
               // Input otomatis UPPERCASE saat ketik
@@ -784,7 +784,7 @@ class _RegisterPageState extends State<RegisterPage>
                 icon: Icons.storefront_rounded,
               ),
               const SizedBox(height: 18),
-              _buildLabel('Nama PIC (Penanggung Jawab)', isRequired: true),
+              _buildLabel('Nama Pemilik Toko', isRequired: true),
               const SizedBox(height: 8),
               _buildTextField(
                 controller: _picNameController,

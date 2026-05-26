@@ -270,12 +270,14 @@ class _HomePageState extends State<HomePage> {
             const Text("Penawaran Menarik", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             _isLoadingBanner
-                ? AspectRatio(aspectRatio: 16 / 9, child: Container(color: Colors.grey[200], child: const Center(child: CircularProgressIndicator())))
+                // Ubah di sini (saat loading)
+                ? AspectRatio(aspectRatio: 5 / 4, child: Container(color: Colors.grey[200], child: const Center(child: CircularProgressIndicator())))
                 : _banners.isEmpty
                     ? Container(height: 150, width: double.infinity, decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(16)), child: const Center(child: Text("Belum ada promo")))
                     : Column(children: [
+                        // Ubah di sini (saat banner tampil)
                         AspectRatio(
-                          aspectRatio: 16 / 9,
+                          aspectRatio: 5 / 4,
                           child: PageView.builder(
                             controller: _pageController, onPageChanged: (index) => setState(() => _currentBannerIndex = index), itemCount: _banners.length,
                             itemBuilder: (context, index) => ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.network(_banners[index]['image_url'] ?? '', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.grey[200], child: const Center(child: Icon(Icons.broken_image))))),
