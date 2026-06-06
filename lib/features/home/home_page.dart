@@ -159,7 +159,6 @@ class _HomePageState extends State<HomePage> {
             _buildNavItemWeb(icon: Icons.card_giftcard, label: "Katalog Reward", index: 1),
             _buildNavItemWeb(icon: Icons.history_outlined, label: "Riwayat Transaksi", index: 2),
             _buildNavItemWeb(icon: Icons.person_outline, label: "Pengaturan Akun", index: 3),
-            // Tombol "Beralih Mode" sudah dihapus
           ]),
         ),
         Expanded(child: _buildBody(true)),
@@ -208,7 +207,54 @@ class _HomePageState extends State<HomePage> {
                     final name = user?.userMetadata?['full_name'] ?? 'User BKA';
                     return Text("Selamat datang, $name", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500));
                   }),
-                  // Tombol "Beralih Mode" sudah dihapus
+                  // [PERBAIKAN] Mengubah Logout menjadi Murni Tulisan Teks Saja
+                  InkWell(
+    onTap: () async {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Konfirmasi Logout'),
+          content: const Text('Apakah Anda yakin ingin keluar dari akun ini?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal', style: TextStyle(color: Colors.grey))),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD32F2F)),
+              child: const Text('Keluar', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+      if (confirm == true) {
+        await _supabase.auth.signOut();
+      }
+    },
+    borderRadius: BorderRadius.circular(24),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15), // Background transparan modern
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.4), width: 1), // Garis pinggir soft
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.power_settings_new_rounded, color: Colors.white, size: 16), // Ikon modern minimalis
+          SizedBox(width: 6),
+          Text(
+            'Logout',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    ),
+  ),
                 ]),
               ]),
             ),
@@ -270,17 +316,26 @@ class _HomePageState extends State<HomePage> {
             const Text("Penawaran Menarik", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             _isLoadingBanner
-                // Ubah di sini (saat loading)
-                ? AspectRatio(aspectRatio: 5 / 4, child: Container(color: Colors.grey[200], child: const Center(child: CircularProgressIndicator())))
+                // Mengganti AspectRatio dengan Container berukuran fix 220
+                ? Container(height: 220, width: double.infinity, decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(16)), child: const Center(child: CircularProgressIndicator()))
                 : _banners.isEmpty
                     ? Container(height: 150, width: double.infinity, decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(16)), child: const Center(child: Text("Belum ada promo")))
                     : Column(children: [
-                        // Ubah di sini (saat banner tampil)
-                        AspectRatio(
-                          aspectRatio: 5 / 4,
+                        // Container untuk membatasi tinggi PageView
+                        Container(
+                          height: 220, 
+                          width: double.infinity,
                           child: PageView.builder(
                             controller: _pageController, onPageChanged: (index) => setState(() => _currentBannerIndex = index), itemCount: _banners.length,
-                            itemBuilder: (context, index) => ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.network(_banners[index]['image_url'] ?? '', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: Colors.grey[200], child: const Center(child: Icon(Icons.broken_image))))),
+                            itemBuilder: (context, index) => ClipRRect(
+                              borderRadius: BorderRadius.circular(16), 
+                              // KUNCI UTAMA: Menggunakan BoxFit.contain agar gambar fleksibel menyesuaikan aslinya
+                              child: Image.network(
+                                _banners[index]['image_url'] ?? '', 
+                                fit: BoxFit.contain, 
+                                errorBuilder: (_, __, ___) => Container(color: Colors.grey[200], child: const Center(child: Icon(Icons.broken_image)))
+                              )
+                            ),
                           ),
                         ),
                         const SizedBox(height: 12),

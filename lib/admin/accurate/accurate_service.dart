@@ -379,15 +379,12 @@ class AccurateService {
     return null;
   }
 
-  // =========================================================================
-  // FUNGSI UTAMA SYNC - MENDUKUNG RENTANG TANGGAL DAN GRACE PERIOD
-  // =========================================================================
-  static Future<SyncResult> syncInvoicesToPoints({
+static Future<SyncResult> syncInvoicesToPoints({
     required SupabaseClient admin,
     required String host,
     required String session,
-    required DateTime startDate, // Parameter Baru
-    required DateTime endDate,   // Parameter Baru
+    required DateTime startDate, 
+    required DateTime endDate,   
     Function(String)? onProgress,
   }) async {
     int totalInvoicesChecked = 0;
@@ -399,74 +396,53 @@ class AccurateService {
     final List<String> errors = [];
 
     try {
-      print('\n=== MULAI SYNC (Filter Tanggal & Grace Period Aktif) ===\n');
+      print('\n=== MULAI SYNC (Filter Tanggal, Grace Period & Tiering Aktif) ===\n');
 
-      final tokenConfig = await admin
-          .from('app_config').select('value')
-          .eq('key', 'accurate_access_token').maybeSingle();
+      final tokenConfig = await admin.from('app_config').select('value').eq('key', 'accurate_access_token').maybeSingle();
       final String token = tokenConfig?['value']?.toString() ?? '';
       if (token.isEmpty) throw 'Token Authorization tidak ditemukan di sistem.';
 
-      // Format tanggal untuk API Accurate
       final String startStr = DateFormat('dd/MM/yyyy').format(startDate);
       final String endStr = DateFormat('dd/MM/yyyy').format(endDate);
       
-      print('  -> [INFO] Menyisir data dari $startStr sampai $endStr');
-
-      // ─────────────────────────────────────────────────────────────────────
-      // Menggunakan Parameter startStr & endStr untuk Preload
-      // ─────────────────────────────────────────────────────────────────────
       onProgress?.call('Memuat semua faktur ($startStr - $endStr)...');
-      final Map<String, List<Map<String, dynamic>>> allInvoicesByCustomer =
-          await _preloadAllInvoices(
-            host: host, session: session, token: token, 
-            startDateStr: startStr, endDateStr: endStr, onProgress: onProgress,
-          );
+      final Map<String, List<Map<String, dynamic>>> allInvoicesByCustomer = await _preloadAllInvoices(
+        host: host, session: session, token: token, startDateStr: startStr, endDateStr: endStr, onProgress: onProgress,
+      );
 
       onProgress?.call('Memuat semua retur ($startStr - $endStr)...');
-      final Map<String, List<Map<String, dynamic>>> allReturnsByCustomer =
-          await _preloadAllReturns(
-            host: host, session: session, token: token, 
-            startDateStr: startStr, endDateStr: endStr, onProgress: onProgress,
-          );
+      final Map<String, List<Map<String, dynamic>>> allReturnsByCustomer = await _preloadAllReturns(
+        host: host, session: session, token: token, startDateStr: startStr, endDateStr: endStr, onProgress: onProgress,
+      );
 
-      // ─────────────────────────────────────────────────────────────────────
-      // Ambil Konfigurasi Aplikasi (Global Rate & Grace Period)
-      // ─────────────────────────────────────────────────────────────────────
       onProgress?.call('Menyiapkan konfigurasi sistem...');
-      final configData = await admin.from('app_config').select('key, value').inFilter('key', ['default_conversion_rate', 'grace_period_days']);
       
-      int globalRate = 10000;
-      int gracePeriodDays = 0;
-      
-      for (var row in configData) {
-        if (row['key'] == 'default_conversion_rate') globalRate = int.tryParse(row['value'] ?? '10000') ?? 10000;
-        if (row['key'] == 'grace_period_days') gracePeriodDays = int.tryParse(row['value'] ?? '0') ?? 0;
-      }
-      print('  -> [INFO] Rate Global: $globalRate | Grace Period: $gracePeriodDays hari');
+      // 1. AMBIL GRACE PERIOD
+      final graceConfig = await admin.from('app_config').select('value').eq('key', 'grace_period_days').maybeSingle();
+      int gracePeriodDays = int.tryParse(graceConfig?['value']?.toString() ?? '0') ?? 0;
 
-      // ─────────────────────────────────────────────────────────────────────
-      // Ambil Data User
-      // ─────────────────────────────────────────────────────────────────────
+      // 2. AMBIL ATURAN TIERING JSON
+      Map<String, dynamic> tierRules = {};
+      try {
+        final tr = await admin.from('app_config').select('value').eq('key', 'point_tiering_rules').maybeSingle();
+        if (tr != null && tr['value'] != null) {
+          tierRules = jsonDecode(tr['value'].toString());
+        }
+      } catch (e) { print('Gagal load tier rules: $e'); }
+      
+      final int baseAmount = tierRules['base_amount'] ?? 100000;
+      final List<dynamic> rawTiers = tierRules['tiers'] ?? [];
+
       onProgress?.call('Mencari data user...');
-      final users = await admin
-          .from('profiles')
-          .select('id, full_name, points, accurate_customer_id, point_conversion_rate')
-          .eq('approval_status', 'APPROVED')
-          .not('accurate_customer_id', 'is', null)
-          .neq('accurate_customer_id', '');
+      final users = await admin.from('profiles').select('id, full_name, points, accurate_customer_id').eq('approval_status', 'APPROVED').not('accurate_customer_id', 'is', null).neq('accurate_customer_id', '');
 
-      if (users.isEmpty) {
-        return SyncResult(message: 'Tidak ada user valid.', totalInvoicesChecked: 0, totalPointsAdded: 0, totalUsersAffected: 0, totalSkipped: 0);
-      }
+      if (users.isEmpty) return SyncResult(message: 'Tidak ada user valid.', totalInvoicesChecked: 0, totalPointsAdded: 0, totalUsersAffected: 0, totalSkipped: 0);
 
       for (final user in users) {
         final String userId = user['id'];
         final String userName = user['full_name'] ?? 'Unknown';
         final String accurateCustomerNo = normalizeCustomerNo(user['accurate_customer_id'].toString());
         if (accurateCustomerNo.isEmpty) continue;
-
-        final int conversionRate = (user['point_conversion_rate'] as num?)?.toInt() ?? globalRate;
 
         onProgress?.call('Sync Toko: $userName...');
 
@@ -476,11 +452,7 @@ class AccurateService {
 
           int userPointsGained = 0;
 
-          final existingHistory = await admin
-              .from('point_history')
-              .select('reference_id, reference_type')
-              .eq('user_id', userId);
-
+          final existingHistory = await admin.from('point_history').select('reference_id, reference_type').eq('user_id', userId);
           final Set<String> claimedInvoices = {};
           final Set<String> claimedReturns = {};
           for (var history in existingHistory) {
@@ -501,9 +473,7 @@ class AccurateService {
 
             totalInvoicesChecked++;
             
-            final String listCustNo = normalizeCustomerNo(
-              invoice['customer']?['customerNo']?.toString() ?? invoice['customer.customerNo']?.toString() ?? '',
-            );
+            final String listCustNo = normalizeCustomerNo(invoice['customer']?['customerNo']?.toString() ?? invoice['customer.customerNo']?.toString() ?? '');
             if (listCustNo.isNotEmpty && listCustNo != accurateCustomerNo) { totalSkipped++; continue; }
 
             Map<String, dynamic> detailData;
@@ -519,48 +489,38 @@ class AccurateService {
             if (detailCustNo.isNotEmpty && detailCustNo != accurateCustomerNo) { totalSkipped++; continue; }
             if (!_isInvoiceFullyPaid(detailData)) { totalSkipped++; continue; }
 
-            // ─────────────────────────────────────────────────────────────────────
-            // PENERAPAN GRACE PERIOD PADA JATUH TEMPO
-            // ─────────────────────────────────────────────────────────────────────
             final String dueDateStr = detailData['dueDate']?.toString() ?? invoice['dueDate']?.toString() ?? '';
             if (dueDateStr.isNotEmpty) {
               final DateTime originalDueDate = DateTime.parse(_parseAccurateDate(dueDateStr));
-              
-              // Tambahkan kompensasi hari (Grace Period)
               final DateTime adjustedDueDate = originalDueDate.add(Duration(days: gracePeriodDays));
-              
               final DateTime? paymentDate = _getPaymentDate(detailData);
               
               if (paymentDate != null) {
-                // Pengecekan lunas berdasarkan Tanggal Jatuh Tempo + Grace Period
-                if (paymentDate.isAfter(adjustedDueDate)) {
-                  print('  -> [SKIP] Faktur $invoiceNumber telat bayar (melebihi toleransi $gracePeriodDays hari).');
-                  totalSkipped++;
-                  continue;
-                }
+                if (paymentDate.isAfter(adjustedDueDate)) { totalSkipped++; continue; }
               } else {
-                if (DateTime.now().isAfter(adjustedDueDate)) {
-                  totalSkipped++;
-                  continue;
-                }
+                if (DateTime.now().isAfter(adjustedDueDate)) { totalSkipped++; continue; }
               }
             }
 
-            final double nominalFaktur =
-                (detailData['grandTotal'] as num?)?.toDouble() ?? (detailData['totalAmount'] as num?)?.toDouble() ??
-                (invoice['grandTotal'] as num?)?.toDouble() ?? (invoice['totalAmount'] as num?)?.toDouble() ?? 0;
+            final double nominalFaktur = (detailData['grandTotal'] as num?)?.toDouble() ?? (detailData['totalAmount'] as num?)?.toDouble() ?? (invoice['grandTotal'] as num?)?.toDouble() ?? (invoice['totalAmount'] as num?)?.toDouble() ?? 0;
             if (nominalFaktur <= 0) { totalSkipped++; continue; }
 
-            final int pointsEarned = (nominalFaktur / conversionRate).floor();
+            // LOGIKA TIERING DINAMIS
+            double currentMultiplier = 0.0;
+            for (var tier in rawTiers) {
+              double min = (tier['min'] as num?)?.toDouble() ?? 0;
+              double? max = tier['max'] != null ? (tier['max'] as num).toDouble() : null;
+              if (nominalFaktur >= min && (max == null || nominalFaktur <= max)) {
+                currentMultiplier = (tier['multiplier'] as num?)?.toDouble() ?? 0.0;
+                break;
+              }
+            }
+
+            final int pointsEarned = ((nominalFaktur / baseAmount) * currentMultiplier).floor();
             if (pointsEarned <= 0) { totalSkipped++; continue; }
 
             await admin.from('point_history').insert({
-              'user_id': userId,
-              'amount': pointsEarned,
-              'description': 'Faktur Lunas #$invoiceNumber',
-              'reference_type': 'INVOICE',
-              'reference_id': invoiceNumber,
-              'created_at': DateTime.now().toIso8601String(),
+              'user_id': userId, 'amount': pointsEarned, 'description': 'Faktur Lunas #$invoiceNumber', 'reference_type': 'INVOICE', 'reference_id': invoiceNumber, 'created_at': DateTime.now().toIso8601String(),
             });
 
             userPointsGained += pointsEarned;
@@ -584,21 +544,25 @@ class AccurateService {
             final String exactReturnCustNo = normalizeCustomerNo(returDetail['customer']?['customerNo']?.toString() ?? '');
             if (exactReturnCustNo.isNotEmpty && exactReturnCustNo != accurateCustomerNo) continue;
 
-            final double nominalRetur =
-                (returDetail['grandTotal'] as num?)?.toDouble() ?? (returDetail['totalAmount'] as num?)?.toDouble() ??
-                (ret['grandTotal'] as num?)?.toDouble() ?? (ret['totalAmount'] as num?)?.toDouble() ?? 0;
+            final double nominalRetur = (returDetail['grandTotal'] as num?)?.toDouble() ?? (returDetail['totalAmount'] as num?)?.toDouble() ?? (ret['grandTotal'] as num?)?.toDouble() ?? (ret['totalAmount'] as num?)?.toDouble() ?? 0;
             if (nominalRetur <= 0) continue;
 
-            final int pointsDeducted = (nominalRetur / conversionRate).floor();
+            // LOGIKA TIERING DINAMIS (RETUR)
+            double currentMultiplier = 0.0;
+            for (var tier in rawTiers) {
+              double min = (tier['min'] as num?)?.toDouble() ?? 0;
+              double? max = tier['max'] != null ? (tier['max'] as num).toDouble() : null;
+              if (nominalRetur >= min && (max == null || nominalRetur <= max)) {
+                currentMultiplier = (tier['multiplier'] as num?)?.toDouble() ?? 0.0;
+                break;
+              }
+            }
+
+            final int pointsDeducted = ((nominalRetur / baseAmount) * currentMultiplier).floor();
             if (pointsDeducted <= 0) continue;
 
             await admin.from('point_history').insert({
-              'user_id': userId,
-              'amount': -pointsDeducted,
-              'description': 'Retur Penjualan #$returnNumber',
-              'reference_type': 'RETURN',
-              'reference_id': returnNumber,
-              'created_at': DateTime.now().toIso8601String(),
+              'user_id': userId, 'amount': -pointsDeducted, 'description': 'Retur Penjualan #$returnNumber', 'reference_type': 'RETURN', 'reference_id': returnNumber, 'created_at': DateTime.now().toIso8601String(),
             });
 
             userPointsGained -= pointsDeducted;
@@ -624,11 +588,7 @@ class AccurateService {
         message: 'Sync Selesai!\nFaktur baru dicek: $totalInvoicesChecked (+ $totalPointsAdded Poin).\n'
             'Retur baru dicek: $totalReturnsChecked (- $totalPointsDeducted Poin).\n'
             'Total $totalUsersAffected user diperbarui.',
-        totalInvoicesChecked: totalInvoicesChecked,
-        totalPointsAdded: totalPointsAdded,
-        totalUsersAffected: totalUsersAffected,
-        totalSkipped: totalSkipped,
-        errors: errors,
+        totalInvoicesChecked: totalInvoicesChecked, totalPointsAdded: totalPointsAdded, totalUsersAffected: totalUsersAffected, totalSkipped: totalSkipped, errors: errors,
       );
     } catch (e) { rethrow; }
   }

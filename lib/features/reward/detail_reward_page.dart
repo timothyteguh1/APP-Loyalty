@@ -98,7 +98,9 @@ Widget _buildContent() {
               const Text("Syarat & Ketentuan", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)), const SizedBox(height: 8),
               Text(widget.item['terms_condition'] ?? '1. Berlaku untuk satu kali penukaran.\n2. Tidak dapat diuangkan.', style: TextStyle(fontSize: 13, color: Colors.grey[700], height: 1.5)),
             ])),
-            const SizedBox(height: 100),
+            
+            // [PERBAIKAN] Menambah ukuran SizedBox agar teks terbawah bisa di-scroll melewati panel bawah
+            const SizedBox(height: 180),
           ]))),
         ]),
       ),
