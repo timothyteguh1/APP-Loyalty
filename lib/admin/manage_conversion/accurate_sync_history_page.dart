@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Untuk Filtering TextInput
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../accurate/accurate_service.dart';
 import '../admin_supabase.dart';
@@ -16,7 +16,7 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   final _supabase = AdminSupabase.client;
   bool _isLoading = true;
   bool _isSyncing = false;
-  bool _isSavingGrace = false; // Status loading saat simpan Grace Period
+  bool _isSavingGrace = false;
   String _syncProgress = '';
   List<Map<String, dynamic>> _historyData = [];
   SyncResult? _lastSyncResult;
@@ -25,13 +25,11 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   DateTime _startDate = DateTime(DateTime.now().year, 1, 1);
   DateTime _endDate = DateTime.now();
 
-  // Variabel untuk Grace Period
   final _graceCtrl = TextEditingController(text: '0');
 
-  // Filter Search & Dropdown
   String _searchQuery = '';
   final _searchCtrl = TextEditingController();
-  String? _selectedType; // 'INVOICE' or 'RETURN'
+  String? _selectedType; 
 
   @override
   void initState() {
@@ -47,45 +45,23 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
     super.dispose();
   }
 
-  // --- MENGAMBIL DATA GRACE PERIOD DARI DATABASE ---
   Future<void> _loadConfig() async {
     try {
-      final res = await _supabase
-          .from('app_config')
-          .select('value')
-          .eq('key', 'grace_period_days')
-          .maybeSingle();
-
+      final res = await _supabase.from('app_config').select('value').eq('key', 'grace_period_days').maybeSingle();
       if (res != null && mounted) {
-        setState(() {
-          _graceCtrl.text = res['value']?.toString() ?? '0';
-        });
+        setState(() { _graceCtrl.text = res['value']?.toString() ?? '0'; });
       }
-    } catch (e) {
-      debugPrint('Gagal memuat Grace Period: $e');
-    }
+    } catch (e) { debugPrint('Gagal memuat Grace Period: $e'); }
   }
 
-  // --- MENYIMPAN DATA GRACE PERIOD KE DATABASE ---
   Future<void> _saveGracePeriod() async {
     final val = _graceCtrl.text.trim();
-    if (val.isEmpty) {
-      _showSnack('Grace Period tidak boleh kosong', false);
-      return;
-    }
-
+    if (val.isEmpty) { _showSnack('Grace Period tidak boleh kosong', false); return; }
     setState(() => _isSavingGrace = true);
     try {
-      await _supabase.from('app_config').upsert(
-        {'key': 'grace_period_days', 'value': val},
-        onConflict: 'key',
-      );
+      await _supabase.from('app_config').upsert({'key': 'grace_period_days', 'value': val}, onConflict: 'key');
       _showSnack('Grace Period berhasil diperbarui menjadi $val hari!', true);
-    } catch (e) {
-      _showSnack('Gagal menyimpan Grace Period: $e', false);
-    } finally {
-      if (mounted) setState(() => _isSavingGrace = false);
-    }
+    } catch (e) { _showSnack('Gagal menyimpan Grace Period: $e', false); } finally { if (mounted) setState(() => _isSavingGrace = false); }
   }
 
   Future<void> _fetchHistory() async {
@@ -105,14 +81,10 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        _showSnack('Gagal memuat histori: $e', false);
-      }
+      if (mounted) { setState(() => _isLoading = false); _showSnack('Gagal memuat histori: $e', false); }
     }
   }
 
-  // Fungsi memunculkan Kalender Date Picker
   Future<void> _selectDateRange() async {
     final picked = await showDateRangePicker(
       context: context,
@@ -122,11 +94,7 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF059669),
-              onPrimary: Colors.white,
-              onSurface: Colors.black,
-            ),
+            colorScheme: const ColorScheme.light(primary: Color(0xFF059669), onPrimary: Colors.white, onSurface: Colors.black),
           ),
           child: child!,
         );
@@ -134,6 +102,11 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
     );
 
     if (picked != null) {
+      // VALIDASI: Paksa harus dalam tahun yang sama
+      if (picked.start.year != picked.end.year) {
+        _showSnack('Sinkronisasi harus dalam tahun yang sama (Per Tahun).', false);
+        return;
+      }
       setState(() {
         _startDate = picked.start;
         _endDate = picked.end;
@@ -143,37 +116,21 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
 
   Future<void> _handleSync() async {
     if (_isSyncing) return;
-    setState(() {
-      _isSyncing = true;
-      _syncProgress = 'Memulai sinkronisasi...';
-      _lastSyncResult = null;
-    });
+    setState(() { _isSyncing = true; _syncProgress = 'Memulai sinkronisasi...'; _lastSyncResult = null; });
 
     try {
       final config = await AccurateService.loadConfig(_supabase);
       final host = config['accurate_db_host'];
       final session = config['accurate_db_session'];
 
-      if (host == null || host.isEmpty || session == null || session.isEmpty) {
-        throw 'Kredensial Accurate kosong. Pastikan sudah login di menu Koneksi Accurate.';
-      }
+      if (host == null || host.isEmpty || session == null || session.isEmpty) { throw 'Kredensial Accurate kosong. Pastikan sudah login di menu Koneksi Accurate.'; }
 
       final result = await AccurateService.syncInvoicesToPoints(
-        admin: _supabase,
-        host: host,
-        session: session,
-        startDate: _startDate, 
-        endDate: _endDate,     
-        onProgress: (msg) {
-          if (mounted) setState(() => _syncProgress = msg);
-        },
+        admin: _supabase, host: host, session: session, startDate: _startDate, endDate: _endDate,     
+        onProgress: (msg) { if (mounted) setState(() => _syncProgress = msg); },
       );
 
-      if (mounted) {
-        setState(() => _lastSyncResult = result);
-        _showSnack('Sync selesai! ${result.totalPointsAdded} poin ditambahkan.', true);
-      }
-
+      if (mounted) { setState(() => _lastSyncResult = result); _showSnack('Sync selesai! ${result.totalPointsAdded} poin ditambahkan.', true); }
       await _fetchHistory();
     } catch (e) {
       if (mounted) _showSnack('Error: $e', false);
@@ -187,14 +144,15 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600)),
       backgroundColor: success ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-      behavior: SnackBarBehavior.floating,
-      margin: const EdgeInsets.all(20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      behavior: SnackBarBehavior.floating, margin: const EdgeInsets.all(20), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ));
   }
 
+  // MENYEMBUNYIKAN HISTORI YANG BERNILAI 0 DARI UI AGAR BERSIH
   List<Map<String, dynamic>> get _filteredHistory {
     return _historyData.where((item) {
+      if ((item['amount'] as num?)?.toInt() == 0) return false; // Menyembunyikan point 0
+      
       if (_selectedType != null && item['reference_type'] != _selectedType) return false;
       if (_searchQuery.isNotEmpty) {
         final name = (item['profiles']?['full_name'] ?? '').toString().toLowerCase();
@@ -206,10 +164,10 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
     }).toList();
   }
 
-  int get _totalPointsIn => _historyData.where((h) => (h['amount'] as num? ?? 0) > 0).fold(0, (sum, h) => sum + ((h['amount'] as num?)?.toInt() ?? 0));
-  int get _totalPointsOut => _historyData.where((h) => (h['amount'] as num? ?? 0) < 0).fold(0, (sum, h) => sum + ((h['amount'] as num?)?.toInt() ?? 0).abs());
-  int get _invoiceCount => _historyData.where((h) => h['reference_type'] == 'INVOICE').length;
-  int get _returnCount => _historyData.where((h) => h['reference_type'] == 'RETURN').length;
+  int get _totalPointsIn => _filteredHistory.where((h) => (h['amount'] as num? ?? 0) > 0).fold(0, (sum, h) => sum + ((h['amount'] as num?)?.toInt() ?? 0));
+  int get _totalPointsOut => _filteredHistory.where((h) => (h['amount'] as num? ?? 0) < 0).fold(0, (sum, h) => sum + ((h['amount'] as num?)?.toInt() ?? 0).abs());
+  int get _invoiceCount => _filteredHistory.where((h) => h['reference_type'] == 'INVOICE').length;
+  int get _returnCount => _filteredHistory.where((h) => h['reference_type'] == 'RETURN').length;
 
   @override
   Widget build(BuildContext context) {
@@ -222,33 +180,26 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
           constraints: const BoxConstraints(maxWidth: 1000),
           child: RefreshIndicator(
             color: const Color(0xFFB71C1C),
-            onRefresh: () async {
-              await _loadConfig();
-              await _fetchHistory();
-            },
+            onRefresh: () async { await _loadConfig(); await _fetchHistory(); },
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ======= HEADER =======
                   const Text('Sync & Histori Poin', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF1A1A2E))),
                   const SizedBox(height: 4),
                   const Text('Tarik data Faktur & Retur dari Accurate, konversi otomatis ke poin toko.', style: TextStyle(fontSize: 13, color: Color(0xFF9CA3AF))),
                   const SizedBox(height: 24),
 
-                  // ======= DATE FILTER & SYNC CARD =======
                   _buildSyncCard(),
                   const SizedBox(height: 16),
 
-                  // ======= SYNC RESULT =======
                   if (_lastSyncResult != null) ...[
                     _buildSyncResultCard(_lastSyncResult!),
                     const SizedBox(height: 16),
                   ],
 
-                  // ======= STAT CARDS =======
                   if (!_isLoading && _historyData.isNotEmpty) ...[
                     if (isDesktop)
                       Row(children: [
@@ -271,15 +222,12 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
                     const SizedBox(height: 28),
                   ],
 
-                  // ======= GRACE PERIOD CARD =======
                   _buildGracePeriodCard(isDesktop),
                   const SizedBox(height: 16),
 
-                  // ======= RULES INFO =======
                   _buildRulesCard(),
                   const SizedBox(height: 28),
 
-                  // ======= HISTORY SECTION =======
                   Row(children: [
                     const Expanded(child: Text('Riwayat Sinkronisasi', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)))),
                     GestureDetector(
@@ -293,11 +241,9 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
                   ]),
                   const SizedBox(height: 16),
 
-                  // ======= FILTER BAR =======
                   _buildFilterBar(),
                   const SizedBox(height: 16),
 
-                  // ======= HISTORY LIST / TABLE =======
                   _isLoading
                       ? _buildLoadingShimmer()
                       : _filteredHistory.isEmpty
@@ -313,10 +259,6 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
       ),
     );
   }
-
-  // ============================================================
-  // WIDGETS
-  // ============================================================
 
   Widget _buildSyncCard() {
     final startStr = DateFormat('dd MMM yyyy').format(_startDate);
@@ -349,10 +291,7 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
                   const SizedBox(height: 14),
                   const Text('Sinkronisasi Otomatis', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 4),
-                  Text(
-                    _isSyncing ? _syncProgress : 'Tarik faktur lunas & retur → konversi ke poin',
-                    style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
-                  ),
+                  Text(_isSyncing ? _syncProgress : 'Tarik faktur lunas & retur → konversi ke poin', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13)),
                 ]),
               ),
               const SizedBox(width: 16),
@@ -376,26 +315,18 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
             ],
           ),
           const SizedBox(height: 20),
-          // TOMBOL PILIH RENTANG TANGGAL
           InkWell(
             onTap: _isSyncing ? null : _selectDateRange,
             borderRadius: BorderRadius.circular(10),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white.withOpacity(0.3)),
-              ),
+              decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white.withOpacity(0.3))),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 18),
                   const SizedBox(width: 10),
-                  Text(
-                    'Rentang: $startStr  -  $endStr',
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
-                  ),
+                  Text('Rentang: $startStr  -  $endStr', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
                   const SizedBox(width: 8),
                   const Icon(Icons.edit_rounded, color: Colors.white70, size: 16),
                 ],
@@ -407,16 +338,10 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
     );
   }
 
-  // --- WIDGET GRACE PERIOD BARU ---
   Widget _buildGracePeriodCard(bool isDesktop) {
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF0F0F0)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF0F0F0)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))]),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -428,29 +353,15 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
             ],
           ),
           const SizedBox(height: 10),
-          const Text(
-            'Kompensasi penambahan hari dari Tanggal Jatuh Tempo faktur agar user tetap mendapatkan poin jika melunasi dalam rentang waktu ini.',
-            style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-          ),
+          const Text('Kompensasi penambahan hari dari Tanggal Jatuh Tempo faktur agar user tetap mendapatkan poin jika melunasi dalam rentang waktu ini.', style: TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
           const SizedBox(height: 16),
           Row(
             children: [
               SizedBox(
-                width: 120,
-                height: 44,
+                width: 120, height: 44,
                 child: TextField(
-                  controller: _graceCtrl,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    filled: true,
-                    fillColor: const Color(0xFFF8F9FC),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                    suffixText: 'Hari',
-                    suffixStyle: const TextStyle(fontSize: 13, color: Colors.grey),
-                  ),
+                  controller: _graceCtrl, keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(contentPadding: const EdgeInsets.symmetric(horizontal: 16), filled: true, fillColor: const Color(0xFFF8F9FC), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none), suffixText: 'Hari', suffixStyle: const TextStyle(fontSize: 13, color: Colors.grey)),
                 ),
               ),
               const SizedBox(width: 12),
@@ -458,16 +369,9 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
                 height: 44,
                 child: ElevatedButton.icon(
                   onPressed: _isSavingGrace ? null : _saveGracePeriod,
-                  icon: _isSavingGrace
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.save_rounded, size: 18),
+                  icon: _isSavingGrace ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.save_rounded, size: 18),
                   label: Text(_isSavingGrace ? 'Menyimpan...' : 'Simpan', style: const TextStyle(fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E293B),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E293B), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                 ),
               )
             ],
@@ -480,11 +384,7 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   Widget _buildSyncResultCard(SyncResult result) {
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFBBF7D0)),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFBBF7D0))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Container(width: 28, height: 28, decoration: BoxDecoration(color: const Color(0xFF10B981).withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 16)),
@@ -527,12 +427,7 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   Widget _buildStatCard(String title, String value, String subtitle, Color color, IconData icon) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF0F0F0)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF0F0F0)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))]),
       child: Row(children: [
         Container(width: 42, height: 42, decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: color, size: 20)),
         const SizedBox(width: 14),
@@ -549,11 +444,7 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   Widget _buildRulesCard() {
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFDE68A)),
-      ),
+      decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFFDE68A))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Container(width: 28, height: 28, decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.gavel_rounded, size: 14, color: Color(0xFFF59E0B))),
@@ -639,12 +530,7 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   Widget _buildDesktopTable(List<Map<String, dynamic>> data) {
     return Container(
       width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF0F0F0)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFF0F0F0)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))]),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: DataTable(
@@ -666,9 +552,7 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
             final desc = item['description'] ?? '-';
 
             String dateStr = '';
-            if (item['created_at'] != null) {
-              try { dateStr = DateFormat('dd MMM yyyy, HH:mm').format(DateTime.parse(item['created_at']).toLocal()); } catch (_) {}
-            }
+            if (item['created_at'] != null) { try { dateStr = DateFormat('dd MMM yyyy, HH:mm').format(DateTime.parse(item['created_at']).toLocal()); } catch (_) {} }
 
             final Color typeColor = isReturn ? const Color(0xFFEF4444) : const Color(0xFF3B82F6);
             final String typeLabel = isReturn ? 'Retur' : 'Faktur';
@@ -682,10 +566,7 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
                 child: Text(typeLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: typeColor)),
               )),
               DataCell(Text(desc, style: const TextStyle(fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis)),
-              DataCell(Text(
-                '${isPos ? "+" : ""}$amount',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: isPos ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
-              )),
+              DataCell(Text('${isPos ? "+" : ""}$amount', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: isPos ? const Color(0xFF10B981) : const Color(0xFFEF4444)))),
             ]);
           }).toList(),
         ),
@@ -702,24 +583,16 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
       final desc = item['description'] ?? '-';
 
       String dateStr = '';
-      if (item['created_at'] != null) {
-        try { dateStr = DateFormat('dd MMM yyyy, HH:mm').format(DateTime.parse(item['created_at']).toLocal()); } catch (_) {}
-      }
+      if (item['created_at'] != null) { try { dateStr = DateFormat('dd MMM yyyy, HH:mm').format(DateTime.parse(item['created_at']).toLocal()); } catch (_) {} }
 
       final Color tColor = isReturn ? const Color(0xFFEF4444) : const Color(0xFF10B981);
 
       return Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: isReturn ? const Color(0xFFFCA5A5).withOpacity(0.3) : const Color(0xFFF3F4F6)),
-        ),
+        margin: const EdgeInsets.only(bottom: 10), padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: isReturn ? const Color(0xFFFCA5A5).withOpacity(0.3) : const Color(0xFFF3F4F6))),
         child: Row(children: [
           Container(
-            width: 42, height: 42,
-            decoration: BoxDecoration(color: tColor.withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
+            width: 42, height: 42, decoration: BoxDecoration(color: tColor.withOpacity(0.08), borderRadius: BorderRadius.circular(12)),
             child: Icon(isReturn ? Icons.assignment_return_rounded : Icons.receipt_long_rounded, color: tColor, size: 20),
           ),
           const SizedBox(width: 14),
@@ -739,8 +612,7 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
 
   Widget _buildEmptyState() {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 48),
+      width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 48),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
       child: Column(children: [
         Container(width: 56, height: 56, decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(16)), child: const Icon(Icons.inbox_rounded, color: Color(0xFF9CA3AF), size: 28)),
@@ -754,23 +626,8 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
 
   Widget _buildLoadingShimmer() {
     return Column(children: List.generate(4, (i) => Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      height: 72,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0.04, end: 0.08),
-        duration: const Duration(milliseconds: 900),
-        curve: Curves.easeInOut,
-        builder: (_, val, __) => Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            color: Colors.black.withOpacity(val),
-          ),
-        ),
-      ),
+      margin: const EdgeInsets.only(bottom: 10), height: 72, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+      child: TweenAnimationBuilder<double>(tween: Tween(begin: 0.04, end: 0.08), duration: const Duration(milliseconds: 900), curve: Curves.easeInOut, builder: (_, val, __) => Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: Colors.black.withOpacity(val)))),
     )));
   }
 }
