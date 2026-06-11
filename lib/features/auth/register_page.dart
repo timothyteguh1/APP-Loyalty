@@ -160,7 +160,10 @@ class _RegisterPageState extends State<RegisterPage>
 
     try {
       // PERUBAHAN: Normalisasi ke UPPERCASE agar c.0001 dan C.0001 dianggap sama
-      final accurateId = _accurateIdController.text.trim().toUpperCase();
+      // PERUBAHAN: Normalisasi UPPERCASE dan HAPUS SPASI otomatis
+      final accurateId = _accurateIdController.text
+          .replaceAll(' ', '')
+          .toUpperCase();
 
       final result = await _authController.signUp(
         email: _emailController.text.trim(),
@@ -199,11 +202,13 @@ class _RegisterPageState extends State<RegisterPage>
           return FadeTransition(
             opacity: anim,
             child: SlideTransition(
-              position: Tween<Offset>(
-                      begin: const Offset(0, 0.1), end: Offset.zero)
-                  .animate(
-                CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
-              ),
+              position:
+                  Tween<Offset>(
+                    begin: const Offset(0, 0.1),
+                    end: Offset.zero,
+                  ).animate(
+                    CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+                  ),
               child: child,
             ),
           );
@@ -399,8 +404,7 @@ class _RegisterPageState extends State<RegisterPage>
                         height: size,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white
-                              .withOpacity(0.04 + (i * 0.008)),
+                          color: Colors.white.withOpacity(0.04 + (i * 0.008)),
                         ),
                       ),
                     );
@@ -472,8 +476,7 @@ class _RegisterPageState extends State<RegisterPage>
                                       color: Colors.white.withOpacity(0.2),
                                       borderRadius: BorderRadius.circular(20),
                                       border: Border.all(
-                                        color:
-                                            Colors.white.withOpacity(0.3),
+                                        color: Colors.white.withOpacity(0.3),
                                       ),
                                     ),
                                     child: Row(
@@ -578,13 +581,14 @@ class _RegisterPageState extends State<RegisterPage>
                               onPressed: _isProcessing
                                   ? null
                                   : (_currentStep == _totalSteps - 1
-                                      ? _handleRegister
-                                      : _nextStep),
+                                        ? _handleRegister
+                                        : _nextStep),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFB71C1C),
                                 foregroundColor: Colors.white,
-                                disabledBackgroundColor:
-                                    const Color(0xFFB71C1C).withOpacity(0.5),
+                                disabledBackgroundColor: const Color(
+                                  0xFFB71C1C,
+                                ).withOpacity(0.5),
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
@@ -658,8 +662,7 @@ class _RegisterPageState extends State<RegisterPage>
       curve: Curves.easeOutCubic,
       builder: (_, v, c) => Opacity(
         opacity: v,
-        child:
-            Transform.translate(offset: Offset(0, 20 * (1 - v)), child: c),
+        child: Transform.translate(offset: Offset(0, 20 * (1 - v)), child: c),
       ),
       child: Container(
         padding: const EdgeInsets.all(24),
@@ -724,8 +727,7 @@ class _RegisterPageState extends State<RegisterPage>
                 controller: _confirmPasswordController,
                 hint: 'Ulangi password',
                 showPassword: _showConfirm,
-                onToggle: () =>
-                    setState(() => _showConfirm = !_showConfirm),
+                onToggle: () => setState(() => _showConfirm = !_showConfirm),
               ),
             ],
           ),
@@ -758,15 +760,19 @@ class _RegisterPageState extends State<RegisterPage>
               TextFormField(
                 controller: _accurateIdController,
                 style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w500),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
                 onChanged: (val) {
                   final upper = val.toUpperCase();
                   if (upper != val) {
-                    _accurateIdController.value =
-                        _accurateIdController.value.copyWith(
-                      text: upper,
-                      selection: TextSelection.collapsed(offset: upper.length),
-                    );
+                    _accurateIdController.value = _accurateIdController.value
+                        .copyWith(
+                          text: upper,
+                          selection: TextSelection.collapsed(
+                            offset: upper.length,
+                          ),
+                        );
                   }
                 },
                 decoration: _inputDecoration(
@@ -947,8 +953,7 @@ class _RegisterPageState extends State<RegisterPage>
       prefixIcon: Icon(prefixIcon, size: 20, color: Colors.grey[400]),
       filled: true,
       fillColor: const Color(0xFFF8F9FC),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       counterText: '',
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),

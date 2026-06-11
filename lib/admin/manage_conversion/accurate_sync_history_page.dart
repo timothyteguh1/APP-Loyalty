@@ -21,9 +21,10 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   List<Map<String, dynamic>> _historyData = [];
   SyncResult? _lastSyncResult;
 
-  // Variabel untuk Filter Tanggal Sync
-  DateTime _startDate = DateTime(DateTime.now().year, 1, 1);
-  DateTime _endDate = DateTime.now();
+  // Variabel untuk Filter Tanggal Sync menggunakan Tahun
+  int _selectedYear = DateTime.now().year;
+  late DateTime _startDate;
+  late DateTime _endDate;
 
   final _graceCtrl = TextEditingController(text: '0');
 
@@ -34,6 +35,10 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   @override
   void initState() {
     super.initState();
+    // Inisialisasi awal startDate dan endDate berdasarkan tahun ini
+    _startDate = DateTime(_selectedYear, 1, 1);
+    _endDate = DateTime(_selectedYear, 12, 31);
+    
     _loadConfig();
     _fetchHistory();
   }
@@ -82,35 +87,6 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
       }
     } catch (e) {
       if (mounted) { setState(() => _isLoading = false); _showSnack('Gagal memuat histori: $e', false); }
-    }
-  }
-
-  Future<void> _selectDateRange() async {
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2100),
-      initialDateRange: DateTimeRange(start: _startDate, end: _endDate),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(primary: Color(0xFF059669), onPrimary: Colors.white, onSurface: Colors.black),
-          ),
-          child: child!,
-        );
-      },
-    );
-
-    if (picked != null) {
-      // VALIDASI: Paksa harus dalam tahun yang sama
-      if (picked.start.year != picked.end.year) {
-        _showSnack('Sinkronisasi harus dalam tahun yang sama (Per Tahun).', false);
-        return;
-      }
-      setState(() {
-        _startDate = picked.start;
-        _endDate = picked.end;
-      });
     }
   }
 
@@ -261,8 +237,8 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
   }
 
   Widget _buildSyncCard() {
-    final startStr = DateFormat('dd MMM yyyy').format(_startDate);
-    final endStr = DateFormat('dd MMM yyyy').format(_endDate);
+    // Generate list tahun dari tahun sekarang ke 5 tahun terakhir
+    final List<int> yearOptions = List.generate(6, (index) => DateTime.now().year - index);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -315,21 +291,33 @@ class _AccurateSyncHistoryPageState extends State<AccurateSyncHistoryPage> {
             ],
           ),
           const SizedBox(height: 20),
-          InkWell(
-            onTap: _isSyncing ? null : _selectDateRange,
-            borderRadius: BorderRadius.circular(10),
+          Align(
+            alignment: Alignment.centerLeft,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white.withOpacity(0.3))),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 18),
-                  const SizedBox(width: 10),
-                  Text('Rentang: $startStr  -  $endStr', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.edit_rounded, color: Colors.white70, size: 16),
-                ],
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15), 
+                borderRadius: BorderRadius.circular(10), 
+                border: Border.all(color: Colors.white.withOpacity(0.3))
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  value: _selectedYear,
+                  dropdownColor: const Color(0xFF059669),
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white),
+                  items: yearOptions.map((year) => DropdownMenuItem(
+                    value: year,
+                    child: Text('Selama $year', style: const TextStyle(fontSize: 14)),
+                  )).toList(),
+                  onChanged: _isSyncing ? null : (val) {
+                    setState(() {
+                      _selectedYear = val!;
+                      _startDate = DateTime(_selectedYear, 1, 1);
+                      _endDate = DateTime(_selectedYear, 12, 31);
+                    });
+                  },
+                ),
               ),
             ),
           )

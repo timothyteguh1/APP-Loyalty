@@ -326,7 +326,6 @@ class AccurateService {
     try { return DateTime.parse(str); } catch (_) { return DateTime.now(); }
   }
 
-  // ── Helper: cari multiplier dari tier rules ──────────────────────────────
   static double _findMultiplier(double rupiah, List<dynamic> rawTiers) {
     for (var tier in rawTiers) {
       double min = (tier['min'] as num?)?.toDouble() ?? 0;
@@ -336,6 +335,37 @@ class AccurateService {
       }
     }
     return 0.0;
+  }
+
+  // ── Helper: hitung poin manual user untuk tahun tertentu ──────────────────
+  // Poin manual = semua point_history yang BUKAN dari Accurate (INVOICE/RETURN),
+  // BUKAN RESET, dan BUKAN REDEEM. Satuannya adalah POIN (bukan rupiah).
+  static Future<int> _getManualPointsForYear(
+      SupabaseClient admin, String userId, int year) async {
+    final history = await admin
+        .from('point_history')
+        .select('amount, reference_id, reference_type')
+        .eq('user_id', userId)
+        .gte('created_at', '$year-01-01T00:00:00.000Z')
+        .lte('created_at', '$year-12-31T23:59:59.999Z');
+
+    int manualPoints = 0;
+    for (var h in history) {
+      final refId = (h['reference_id'] ?? '').toString().toUpperCase();
+      final refType = (h['reference_type'] ?? '').toString().toUpperCase();
+
+      // Lewati semua yang bukan manual
+      final bool isInvoiceOrReturn = refType == 'INVOICE' || refType == 'RETURN';
+      final bool isReset = refId.startsWith('RESET_') || refId.startsWith('RESET-');
+      final bool isRedeem = refType == 'REDEEM' || refId.startsWith('RDM');
+      final bool isAccurateBonus = refId.startsWith('FP/') || refId.startsWith('SI/') ||
+          refId.startsWith('SR/') || refId.startsWith('BONUS_');
+
+      if (isInvoiceOrReturn || isReset || isRedeem || isAccurateBonus) continue;
+
+      manualPoints += (h['amount'] as num?)?.toInt() ?? 0;
+    }
+    return manualPoints;
   }
 
   static Future<SyncResult> syncInvoicesToPoints({
@@ -557,7 +587,7 @@ class AccurateService {
 
           print('\n[VALID TRX] $userName: ${validTransactions.length} transaksi baru');
 
-          // ── Ambil yearly_accumulations dari DB (bukan hanya dari validTransactions) ──
+          // ── Ambil yearly_accumulations dari DB ───────────────────────────
           final yearlyRes = await admin
               .from('yearly_accumulations').select().eq('user_id', userId);
           Map<int, Map<String, dynamic>> yearlyData = {};
@@ -567,9 +597,7 @@ class AccurateService {
 
           Set<int> affectedYears = {};
 
-          // ── 3. INSERT TRANSAKSI BARU ─────────────────────────────────────
-          // accurate_points di yearlyData digunakan untuk menghitung tier SETELAH
-          // semua transaksi baru ini masuk. Mulai dari nilai yang sudah ada di DB.
+          // ── 3. INSERT TRANSAKSI BARU (amount=0, akan di-update di Step 4) ─
           for (final trx in validTransactions) {
             final int year = (trx['date'] as DateTime).year;
             affectedYears.add(year);
@@ -590,13 +618,11 @@ class AccurateService {
                 (accData['accurate_points'] as int) + poinMentah;
             if ((accData['accurate_points'] as int) < 0) accData['accurate_points'] = 0;
 
-            // Insert dengan amount=0 dan multiplier_used=0 dulu
-            // akan di-update benar di Step 4
             await admin.from('point_history').insert({
               'user_id': userId,
               'amount': 0,
               'base_nominal': nominal,
-              'multiplier_used': 0.0, // akan di-update di Step 4
+              'multiplier_used': 0.0,
               'description': trx['type'] == 'INVOICE'
                   ? 'Faktur Lunas #${trx['ref_id']}'
                   : 'Retur Penjualan #${trx['ref_id']}',
@@ -608,17 +634,24 @@ class AccurateService {
 
           bool hasUpdates = false;
 
-          // ── 4. RETROACTIVE UPDATE + simpan multiplier_used ───────────────
-          // accurate_points di yearlyData sekarang = nilai DB lama + transaksi baru
-          // Ini yang dipakai untuk menentukan tier final
+          // ── 4. RETROACTIVE UPDATE ────────────────────────────────────────
+          // Tier dihitung dari: accurate_points (DB + transaksi baru) + poin manual
+          // Poin manual satuannya POIN, dikonversi ke rupiah equivalent: manualPoints * baseAmount
           for (int year in affectedYears) {
             final accData = yearlyData[year]!;
-            double currentRupiah = (accData['accurate_points'] as int) * baseAmount.toDouble();
-            double currentMultiplier = _findMultiplier(currentRupiah, rawTiers);
+
+            // Ambil poin manual tahun ini
+            final int manualPoints = await _getManualPointsForYear(admin, userId, year);
+
+            // Effective rupiah = (accurate_points + manual_points) * baseAmount
+            final int effectivePoints = (accData['accurate_points'] as int) + manualPoints;
+            final double effectiveRupiah = (effectivePoints < 0 ? 0 : effectivePoints) * baseAmount.toDouble();
+            final double currentMultiplier = _findMultiplier(effectiveRupiah, rawTiers);
 
             print('\n══════════════════════════════════════════════════════════');
             print('RETROAKTIF TAHUN $year — $userName');
-            print('Akumulasi: Rp ${currentRupiah.toStringAsFixed(0)} | Tier: ${currentMultiplier}x');
+            print('Accurate: ${accData['accurate_points']}p | Manual: ${manualPoints}p | Efektif: ${effectivePoints}p');
+            print('Rupiah Efektif: Rp ${effectiveRupiah.toStringAsFixed(0)} | Multiplier: ${currentMultiplier}x');
             print('──────────────────────────────────────────────────────────');
 
             final allYearHistory = await admin
@@ -650,13 +683,12 @@ class AccurateService {
                   ' | diff=${diff > 0 ? "+$diff" : "$diff"}'
                   '${(diff != 0 || multiplierChanged) ? " ← UPDATE" : " ✓"}');
 
-              // Update jika amount berubah ATAU multiplier_used belum tersimpan
               if (diff != 0 || multiplierChanged) {
                 await admin
                     .from('point_history')
                     .update({
                       'amount': expectedAmount,
-                      'multiplier_used': currentMultiplier, // simpan multiplier yang dipakai
+                      'multiplier_used': currentMultiplier,
                     })
                     .eq('id', h['id']);
                 if (diff > 0) totalPointsAdded += diff;
@@ -678,23 +710,28 @@ class AccurateService {
               }, onConflict: 'user_id, year');
             }
 
-            // Hitung saldo dari INVOICE & RETURN saja (exclude RESET_*)
+            // FIX: Hitung saldo dari SEMUA transaksi kecuali RESET
+            // Ini memastikan poin manual ikut masuk ke saldo terkini
             final allHistory = await admin
                 .from('point_history')
-                .select('amount')
-                .eq('user_id', userId)
-                .inFilter('reference_type', ['INVOICE', 'RETURN']);
+                .select('amount, reference_id')
+                .eq('user_id', userId);
+
             int finalPoints = 0;
             for (var item in allHistory) {
+              final refId = (item['reference_id'] ?? '').toString().toUpperCase();
+              // Lewati entry RESET
+              if (refId.startsWith('RESET_') || refId.startsWith('RESET-')) continue;
               finalPoints += (item['amount'] as num?)?.toInt() ?? 0;
             }
             if (finalPoints < 0) finalPoints = 0;
+
             await admin.from('profiles').update({
               'points': finalPoints,
               'updated_at': DateTime.now().toIso8601String(),
             }).eq('id', userId);
 
-            print('[SALDO] $userName → $finalPoints poin');
+            print('[SALDO] $userName → $finalPoints poin (termasuk poin manual)');
             totalUsersAffected++;
           } else {
             print('[SALDO] $userName → tidak ada perubahan');
