@@ -338,8 +338,6 @@ class AccurateService {
   }
 
   // ── Helper: hitung poin manual user untuk tahun tertentu ──────────────────
-  // Poin manual = semua point_history yang BUKAN dari Accurate (INVOICE/RETURN),
-  // BUKAN RESET, dan BUKAN REDEEM. Satuannya adalah POIN (bukan rupiah).
   static Future<int> _getManualPointsForYear(
       SupabaseClient admin, String userId, int year) async {
     final history = await admin
@@ -354,16 +352,15 @@ class AccurateService {
       final refId = (h['reference_id'] ?? '').toString().toUpperCase();
       final refType = (h['reference_type'] ?? '').toString().toUpperCase();
 
-      // Lewati semua yang bukan manual
       final bool isInvoiceOrReturn = refType == 'INVOICE' || refType == 'RETURN';
       final bool isReset = refId.startsWith('RESET_') || refId.startsWith('RESET-');
       final bool isRedeem = refType == 'REDEEM' || refId.startsWith('RDM');
-      final bool isAccurateBonus = refId.startsWith('FP/') || refId.startsWith('SI/') ||
-          refId.startsWith('SR/') || refId.startsWith('BONUS_');
+      
+      final bool isAccurateBonus = refId.startsWith('FP') || refId.startsWith('SI') ||
+          refId.startsWith('SR') || refId.startsWith('BONUS_');
 
       if (isInvoiceOrReturn || isReset || isRedeem || isAccurateBonus) continue;
-
-      manualPoints += (h['amount'] as num?)?.toInt() ?? 0;
+      manualPoints += (h['amount'] as num?)?.toInt() ?? 0; // MENAMBAHKAN JUGA MINUS/PENGURANGAN
     }
     return manualPoints;
   }
@@ -391,16 +388,18 @@ class AccurateService {
       final String endStr = DateFormat('dd/MM/yyyy').format(endDate);
 
       onProgress?.call('Memuat semua faktur ($startStr - $endStr)...');
-      final allInvoicesByCustomer = await _preloadAllInvoices(
-        host: host, session: session, token: token,
-        startDateStr: startStr, endDateStr: endStr, onProgress: onProgress,
-      );
+      final Map<String, List<Map<String, dynamic>>> allInvoicesByCustomer =
+          await _preloadAllInvoices(
+            host: host, session: session, token: token,
+            startDateStr: startStr, endDateStr: endStr, onProgress: onProgress,
+          );
 
       onProgress?.call('Memuat semua retur ($startStr - $endStr)...');
-      final allReturnsByCustomer = await _preloadAllReturns(
-        host: host, session: session, token: token,
-        startDateStr: startStr, endDateStr: endStr, onProgress: onProgress,
-      );
+      final Map<String, List<Map<String, dynamic>>> allReturnsByCustomer =
+          await _preloadAllReturns(
+            host: host, session: session, token: token,
+            startDateStr: startStr, endDateStr: endStr, onProgress: onProgress,
+          );
 
       onProgress?.call('Menyiapkan konfigurasi sistem...');
       final graceConfig = await admin
@@ -429,17 +428,13 @@ class AccurateService {
           .eq('approval_status', 'APPROVED')
           .not('accurate_customer_id', 'is', null)
           .neq('accurate_customer_id', '');
-      if (users.isEmpty) {
-        return SyncResult(message: 'Tidak ada user valid.',
-            totalInvoicesChecked: 0, totalPointsAdded: 0,
-            totalUsersAffected: 0, totalSkipped: 0);
-      }
+          
+      if (users.isEmpty) return SyncResult(message: 'Tidak ada user valid.', totalInvoicesChecked: 0, totalPointsAdded: 0, totalUsersAffected: 0, totalSkipped: 0);
 
       for (final user in users) {
         final String userId = user['id'];
         final String userName = user['full_name'] ?? 'Unknown';
-        final String accurateCustomerNo =
-            normalizeCustomerNo(user['accurate_customer_id'].toString());
+        final String accurateCustomerNo = normalizeCustomerNo(user['accurate_customer_id'].toString());
         if (accurateCustomerNo.isEmpty) continue;
 
         onProgress?.call('Sync Toko: $userName...');
@@ -447,18 +442,13 @@ class AccurateService {
         print('│ USER: $userName | CUST: $accurateCustomerNo');
 
         try {
-          final List<Map<String, dynamic>> userInvoices =
-              allInvoicesByCustomer[accurateCustomerNo] ?? [];
-          final List<Map<String, dynamic>> userReturns =
-              allReturnsByCustomer[accurateCustomerNo] ?? [];
+          final List<Map<String, dynamic>> userInvoices = allInvoicesByCustomer[accurateCustomerNo] ?? [];
+          final List<Map<String, dynamic>> userReturns = allReturnsByCustomer[accurateCustomerNo] ?? [];
 
           print('│ Faktur cache: ${userInvoices.length} | Retur cache: ${userReturns.length}');
           print('└─────────────────────────────────────────────────────');
 
-          final existingHistory = await admin
-              .from('point_history')
-              .select('reference_id, reference_type')
-              .eq('user_id', userId);
+          final existingHistory = await admin.from('point_history').select('reference_id, reference_type').eq('user_id', userId);
           final Set<String> claimedInvoices = {};
           final Set<String> claimedReturns = {};
           for (var h in existingHistory) {
@@ -498,8 +488,7 @@ class AccurateService {
             Map<String, dynamic> detailData;
             try {
               final detailResponse = await fetchInvoiceDetail(host, session, token, invoiceId);
-              detailData = (detailResponse['d'] is Map)
-                  ? Map<String, dynamic>.from(detailResponse['d'] as Map) : {};
+              detailData = (detailResponse['d'] is Map) ? Map<String, dynamic>.from(detailResponse['d'] as Map) : {};
             } catch (e) {
               print('  → SKIP: gagal ambil detail — $e');
               errors.add('Faktur $invoiceNumber: Gagal ambil detail'); continue;
@@ -582,50 +571,51 @@ class AccurateService {
             totalReturnsChecked++;
           }
 
-          validTransactions.sort(
-              (a, b) => (a['date'] as DateTime).compareTo(b['date'] as DateTime));
+          validTransactions.sort((a, b) => (a['date'] as DateTime).compareTo(b['date'] as DateTime));
 
           print('\n[VALID TRX] $userName: ${validTransactions.length} transaksi baru');
 
-          // ── Ambil yearly_accumulations dari DB ───────────────────────────
-          final yearlyRes = await admin
-              .from('yearly_accumulations').select().eq('user_id', userId);
+          final yearlyRes = await admin.from('yearly_accumulations').select().eq('user_id', userId);
           Map<int, Map<String, dynamic>> yearlyData = {};
           for (var row in yearlyRes) {
             yearlyData[row['year'] as int] = Map<String, dynamic>.from(row);
           }
 
           Set<int> affectedYears = {};
+          
+          int currentYear = DateTime.now().year;
+          affectedYears.add(currentYear);
+          if (!yearlyData.containsKey(currentYear)) {
+            yearlyData[currentYear] = {
+              'user_id': userId, 'year': currentYear,
+              'accurate_points': 0, 'reward_points_given': 0,
+            };
+          }
 
-          // ── 3. INSERT TRANSAKSI BARU (amount=0, akan di-update di Step 4) ─
+          // ── 3. INSERT TRANSAKSI BARU SEBAGAI POIN MURNI (TANPA BONUS) ──
           for (final trx in validTransactions) {
             final int year = (trx['date'] as DateTime).year;
             affectedYears.add(year);
 
             if (!yearlyData.containsKey(year)) {
-              yearlyData[year] = {
-                'user_id': userId, 'year': year,
-                'accurate_points': 0, 'reward_points_given': 0,
-              };
+              yearlyData[year] = {'user_id': userId, 'year': year, 'accurate_points': 0, 'reward_points_given': 0};
             }
 
             final accData = yearlyData[year]!;
             final double nominal = trx['nominal'];
+            
             int poinMentah = (nominal / baseAmount).floor();
             if (trx['type'] == 'RETURN') poinMentah = -poinMentah;
 
-            accData['accurate_points'] =
-                (accData['accurate_points'] as int) + poinMentah;
+            accData['accurate_points'] = (accData['accurate_points'] as int) + poinMentah;
             if ((accData['accurate_points'] as int) < 0) accData['accurate_points'] = 0;
 
             await admin.from('point_history').insert({
               'user_id': userId,
-              'amount': 0,
+              'amount': poinMentah,
               'base_nominal': nominal,
-              'multiplier_used': 0.0,
-              'description': trx['type'] == 'INVOICE'
-                  ? 'Faktur Lunas #${trx['ref_id']}'
-                  : 'Retur Penjualan #${trx['ref_id']}',
+              'multiplier_used': 1.0, 
+              'description': trx['type'] == 'INVOICE' ? 'Faktur Lunas #${trx['ref_id']}' : 'Retur Penjualan #${trx['ref_id']}',
               'reference_type': trx['type'],
               'reference_id': trx['ref_id'],
               'created_at': (trx['date'] as DateTime).toIso8601String(),
@@ -634,26 +624,11 @@ class AccurateService {
 
           bool hasUpdates = false;
 
-          // ── 4. RETROACTIVE UPDATE ────────────────────────────────────────
-          // Tier dihitung dari: accurate_points (DB + transaksi baru) + poin manual
-          // Poin manual satuannya POIN, dikonversi ke rupiah equivalent: manualPoints * baseAmount
+          // ── 4. RETROACTIVE UPDATE: HITUNG ULANG TIER & PENYEMBUHAN DATA LAMA ──
           for (int year in affectedYears) {
             final accData = yearlyData[year]!;
 
-            // Ambil poin manual tahun ini
-            final int manualPoints = await _getManualPointsForYear(admin, userId, year);
-
-            // Effective rupiah = (accurate_points + manual_points) * baseAmount
-            final int effectivePoints = (accData['accurate_points'] as int) + manualPoints;
-            final double effectiveRupiah = (effectivePoints < 0 ? 0 : effectivePoints) * baseAmount.toDouble();
-            final double currentMultiplier = _findMultiplier(effectiveRupiah, rawTiers);
-
-            print('\n══════════════════════════════════════════════════════════');
-            print('RETROAKTIF TAHUN $year — $userName');
-            print('Accurate: ${accData['accurate_points']}p | Manual: ${manualPoints}p | Efektif: ${effectivePoints}p');
-            print('Rupiah Efektif: Rp ${effectiveRupiah.toStringAsFixed(0)} | Multiplier: ${currentMultiplier}x');
-            print('──────────────────────────────────────────────────────────');
-
+            // 1. Tarik ulang dan totalkan Poin Dasar Murni langsung dari DB agar 100% akurat
             final allYearHistory = await admin
                 .from('point_history')
                 .select()
@@ -663,43 +638,96 @@ class AccurateService {
                 .inFilter('reference_type', ['INVOICE', 'RETURN'])
                 .order('created_at', ascending: true);
 
+            int trueAccurateBase = 0;
             for (var h in allYearHistory) {
+              String refId = h['reference_id']?.toString() ?? '';
+              if (refId.startsWith('BONUS_')) continue;
+
               double nominal = (h['base_nominal'] as num?)?.toDouble() ?? 0;
               if (nominal <= 0) continue;
 
-              int basePoin = (nominal / baseAmount).floor();
-              int expectedAmount = (basePoin * currentMultiplier).floor();
-              if (h['reference_type'] == 'RETURN') expectedAmount = -expectedAmount;
+              int correctBase = (nominal / baseAmount).floor();
+              if (h['reference_type'] == 'RETURN') correctBase = -correctBase;
+              trueAccurateBase += correctBase;
+            }
 
-              int currentAmount = (h['amount'] as num?)?.toInt() ?? 0;
+            accData['accurate_points'] = trueAccurateBase; // Selalu sejalan dengan DB
+
+            // 2. Ambil Total Poin Manual (Menghitung minus dan plus)
+            final int manualPoints = await _getManualPointsForYear(admin, userId, year);
+
+            // 3. Kalkulasi Tier Dinamis (Bisa Turun jika retur/minus besar)
+            final int effectivePoints = trueAccurateBase + manualPoints;
+            final double effectiveRupiah = (effectivePoints < 0 ? 0 : effectivePoints) * baseAmount.toDouble();
+            final double currentMultiplier = _findMultiplier(effectiveRupiah, rawTiers);
+
+            // 4. Hitung Hak Poin Sesungguhnya
+            int expectedHakPoin = (trueAccurateBase * currentMultiplier).floor();
+            int expectedBonus = expectedHakPoin - trueAccurateBase;
+
+            print('\n══════════════════════════════════════════════════════════');
+            print('RETROAKTIF TAHUN $year — $userName');
+            print('Accurate: ${trueAccurateBase}p | Manual: ${manualPoints}p | Efektif: ${effectivePoints}p');
+            print('Rupiah Efektif: Rp ${effectiveRupiah.toStringAsFixed(0)} | Multiplier: ${currentMultiplier}x');
+            print('──────────────────────────────────────────────────────────');
+
+            // 5. Koreksi Baris Faktur di Terminal agar sesuai Desain (Hanya menyimpan nilai murni 1.0)
+            for (var h in allYearHistory) {
+              String refId = h['reference_id']?.toString() ?? '';
+              if (refId.startsWith('BONUS_')) continue;
+
+              double nominal = (h['base_nominal'] as num?)?.toDouble() ?? 0;
+              if (nominal <= 0) continue;
+
+              int correctBase = (nominal / baseAmount).floor();
+              if (h['reference_type'] == 'RETURN') correctBase = -correctBase;
+
+              int currentAmt = (h['amount'] as num?)?.toInt() ?? 0;
               double savedMultiplier = (h['multiplier_used'] as num?)?.toDouble() ?? 0.0;
-              int diff = expectedAmount - currentAmount;
-              bool multiplierChanged = savedMultiplier != currentMultiplier;
+              bool multiplierChanged = savedMultiplier != 1.0; 
+              
+              if (currentAmt != correctBase || multiplierChanged) {
+                await admin.from('point_history').update({'amount': correctBase, 'multiplier_used': 1.0}).eq('id', h['id']);
+                hasUpdates = true;
+              }
 
               print('${h['reference_type']} ${h['reference_id']}'
                   ' | Rp ${nominal.toStringAsFixed(0)}'
-                  ' | ${basePoin}p x ${currentMultiplier}x → ${expectedAmount}p'
-                  ' | db=${currentAmount}p | saved_mult=${savedMultiplier}x'
-                  ' | diff=${diff > 0 ? "+$diff" : "$diff"}'
-                  '${(diff != 0 || multiplierChanged) ? " ← UPDATE" : " ✓"}');
+                  ' | Murni: ${correctBase}p'
+                  ' | db=${currentAmt}p | saved_mult=${savedMultiplier}x'
+                  '${(currentAmt != correctBase || multiplierChanged) ? " ← UPDATE" : " ✓"}');
+            }
 
-              if (diff != 0 || multiplierChanged) {
-                await admin
-                    .from('point_history')
-                    .update({
-                      'amount': expectedAmount,
-                      'multiplier_used': currentMultiplier,
-                    })
-                    .eq('id', h['id']);
-                if (diff > 0) totalPointsAdded += diff;
-                else if (diff < 0) totalPointsDeducted += diff.abs();
+            // 6. Suntik 1 Baris Bonus Akumulasi
+            final bonusRowRes = await admin.from('point_history').select()
+                .eq('user_id', userId).eq('reference_id', 'BONUS_TIER_$year').maybeSingle();
+
+            if (bonusRowRes != null) {
+              int currentBonus = (bonusRowRes['amount'] as num?)?.toInt() ?? 0;
+              if (currentBonus != expectedBonus) {
+                await admin.from('point_history').update({
+                  'amount': expectedBonus,
+                  'multiplier_used': currentMultiplier,
+                  'description': 'Bonus Akumulasi Tier ($currentMultiplier x)',
+                }).eq('id', bonusRowRes['id']);
                 hasUpdates = true;
               }
+            } else if (expectedBonus != 0) {
+              await admin.from('point_history').insert({
+                'user_id': userId,
+                'amount': expectedBonus,
+                'base_nominal': 0,
+                'multiplier_used': currentMultiplier,
+                'description': 'Bonus Akumulasi Tier ($currentMultiplier x)',
+                'reference_type': 'INVOICE', // << FIXED! Tidak ada lagi SYSTEM Error
+                'reference_id': 'BONUS_TIER_$year',
+                'created_at': DateTime.now().toIso8601String(),
+              });
+              hasUpdates = true;
             }
-            print('══════════════════════════════════════════════════════════\n');
           }
 
-          // ── 5. SIMPAN TOTAL & UPDATE SALDO ───────────────────────────────
+          // ── 5. SIMPAN TOTAL & UPDATE SALDO DATABASE ────────────────────────
           if (hasUpdates || validTransactions.isNotEmpty) {
             for (final accData in yearlyData.values) {
               await admin.from('yearly_accumulations').upsert({
@@ -710,20 +738,14 @@ class AccurateService {
               }, onConflict: 'user_id, year');
             }
 
-            // FIX: Hitung saldo dari SEMUA transaksi kecuali RESET
-            // Ini memastikan poin manual ikut masuk ke saldo terkini
-            final allHistory = await admin
-                .from('point_history')
-                .select('amount, reference_id')
-                .eq('user_id', userId);
-
+            final allHistory = await admin.from('point_history').select('amount, reference_id').eq('user_id', userId);
             int finalPoints = 0;
             for (var item in allHistory) {
               final refId = (item['reference_id'] ?? '').toString().toUpperCase();
-              // Lewati entry RESET
               if (refId.startsWith('RESET_') || refId.startsWith('RESET-')) continue;
               finalPoints += (item['amount'] as num?)?.toInt() ?? 0;
             }
+            
             if (finalPoints < 0) finalPoints = 0;
 
             await admin.from('profiles').update({
@@ -740,7 +762,6 @@ class AccurateService {
         } catch (e) {
           if (e.toString() == 'SESSION_EXPIRED') rethrow;
           errors.add('$userName: $e');
-          print('[ERROR] $userName: $e');
         }
       }
 
@@ -769,62 +790,44 @@ class AccurateService {
     try {
       final parts = dateStr.split('/');
       if (parts.length == 3) {
-        return DateTime(
-          int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0]),
-        ).toIso8601String();
+        return DateTime(int.parse(parts[2]), int.parse(parts[1]), int.parse(parts[0])).toIso8601String();
       }
     } catch (_) {}
     return DateTime.now().toIso8601String();
   }
 
   static Future<void> disconnect(SupabaseClient admin) async {
-    final keys = [
-      'accurate_access_token', 'accurate_token_expiry',
-      'accurate_db_session', 'accurate_db_host', 'accurate_db_id',
-    ];
+    final keys = ['accurate_access_token', 'accurate_token_expiry', 'accurate_db_session', 'accurate_db_host', 'accurate_db_id'];
     for (final key in keys) {
       await admin.from('app_config').upsert({'key': key, 'value': ''}, onConflict: 'key');
     }
   }
 
-  Future<List<Map<String, dynamic>>> getAccurateCustomers(
-      {String keyword = '', String statusFilter = 'ALL'}) async {
+  Future<List<Map<String, dynamic>>> getAccurateCustomers({String keyword = '', String statusFilter = 'ALL'}) async {
     try {
-      final config = await _supabase.from('app_config').select().inFilter('key', [
-        'accurate_db_host', 'accurate_access_token', 'accurate_db_session',
-      ]);
+      final config = await _supabase.from('app_config').select().inFilter('key', ['accurate_db_host', 'accurate_access_token', 'accurate_db_session']);
       String? host, token, session;
       for (var row in config) {
         if (row['key'] == 'accurate_db_host') host = row['value'];
         if (row['key'] == 'accurate_access_token') token = row['value'];
         if (row['key'] == 'accurate_db_session') session = row['value'];
       }
-      if (host == null || token == null || session == null ||
-          host.isEmpty || session.isEmpty || token.isEmpty) {
-        throw Exception('Kredensial Accurate tidak ditemukan.');
-      }
-      String urlStr =
-          '$host/accurate/api/customer/list.do?fields=id,customerNo,name,email,mobilePhone,suspended&sp.pageSize=100';
+      if (host == null || token == null || session == null || host.isEmpty || session.isEmpty || token.isEmpty) { throw Exception('Kredensial Accurate tidak ditemukan.'); }
+      
+      String urlStr = '$host/accurate/api/customer/list.do?fields=id,customerNo,name,email,mobilePhone,suspended&sp.pageSize=100';
       if (keyword.isNotEmpty) urlStr += '&keywords=${Uri.encodeComponent(keyword)}';
       if (statusFilter == 'ACTIVE') urlStr += '&filter.suspended.op=EQUAL&filter.suspended.val[0]=false';
       else if (statusFilter == 'INACTIVE') urlStr += '&filter.suspended.op=EQUAL&filter.suspended.val[0]=true';
-      final response = await _proxy(
-          accurateUrl: urlStr,
-          headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session});
-      if (response['s'] == true && response['d'] != null) {
-        return List<Map<String, dynamic>>.from(response['d']);
-      } else { throw Exception('API Error: ${response['d']}'); }
+      
+      final response = await _proxy(accurateUrl: urlStr, headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session});
+      if (response['s'] == true && response['d'] != null) return List<Map<String, dynamic>>.from(response['d']);
+      else throw Exception('API Error: ${response['d']}');
     } catch (e) { rethrow; }
   }
 
-  Future<bool> updateCustomerToAccurate({
-    required String customerNo, required String name,
-    String? email, String? phone, String? address,
-  }) async {
+  Future<bool> updateCustomerToAccurate({required String customerNo, required String name, String? email, String? phone, String? address}) async {
     try {
-      final config = await _supabase.from('app_config').select().inFilter('key', [
-        'accurate_db_host', 'accurate_access_token', 'accurate_db_session',
-      ]);
+      final config = await _supabase.from('app_config').select().inFilter('key', ['accurate_db_host', 'accurate_access_token', 'accurate_db_session']);
       String? host, token, session;
       for (var row in config) {
         if (row['key'] == 'accurate_db_host') host = row['value'];
@@ -832,51 +835,35 @@ class AccurateService {
         if (row['key'] == 'accurate_db_session') session = row['value'];
       }
       if (host == null || token == null || session == null) return false;
-      final int? internalId = await _getInternalIdByCustomerNo(
-        normalizeCustomerNo(customerNo), host: host, token: token, session: session,
-      );
+      final int? internalId = await _getInternalIdByCustomerNo(normalizeCustomerNo(customerNo), host: host, token: token, session: session);
       if (internalId == null || internalId <= 0) return false;
+      
       final Map<String, dynamic> bodyPayload = {'id': internalId, 'name': name};
       if (email != null && email.isNotEmpty) bodyPayload['email'] = email;
       if (phone != null && phone.isNotEmpty) bodyPayload['mobilePhone'] = phone;
       if (address != null && address.isNotEmpty) bodyPayload['billStreet'] = address;
-      final response = await _proxy(
-        accurateUrl: '$host/accurate/api/customer/save.do',
-        method: 'POST',
-        headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session},
-        body: bodyPayload,
-      );
+      
+      final response = await _proxy(accurateUrl: '$host/accurate/api/customer/save.do', method: 'POST', headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session}, body: bodyPayload);
       return response['s'] == true;
     } catch (e) { return false; }
   }
 
-  Future<int?> _getInternalIdByCustomerNo(String customerNo,
-      {String? host, String? token, String? session}) async {
+  Future<int?> _getInternalIdByCustomerNo(String customerNo, {String? host, String? token, String? session}) async {
     try {
       if (host == null || token == null || session == null) return null;
-      final urlStr =
-          '$host/accurate/api/customer/list.do?fields=id,customerNo,name'
-          '&keywords=${Uri.encodeComponent(customerNo)}&sp.pageSize=20';
-      final response = await _proxy(
-        accurateUrl: urlStr,
-        headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session},
-      );
+      final urlStr = '$host/accurate/api/customer/list.do?fields=id,customerNo,name&keywords=${Uri.encodeComponent(customerNo)}&sp.pageSize=20';
+      final response = await _proxy(accurateUrl: urlStr, headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session});
       if (response['s'] == true && response['d'] != null) {
         final List data = response['d'];
         for (final item in data) {
-          if (normalizeCustomerNo(item['customerNo']?.toString() ?? '') == customerNo) {
-            return (item['id'] as num?)?.toInt();
-          }
+          if (normalizeCustomerNo(item['customerNo']?.toString() ?? '') == customerNo) return (item['id'] as num?)?.toInt();
         }
       }
       return null;
     } catch (e) { return null; }
   }
 
-  Future<void> syncLocalToAccurate({
-    required List<Map<String, dynamic>> profiles,
-    Function(String)? onProgress,
-  }) async {
+  Future<void> syncLocalToAccurate({required List<Map<String, dynamic>> profiles, Function(String)? onProgress}) async {
     int successCount = 0; int failCount = 0;
     for (var profile in profiles) {
       final String? custNo = profile['accurate_customer_id'];
@@ -894,11 +881,8 @@ class AccurateService {
   Future<void> autoSyncAccurateToSupabase() async {
     try {
       final supabase = AdminSupabase.client;
-      final profiles = await supabase
-          .from('profiles').select('accurate_customer_id').not('accurate_customer_id', 'is', null);
-      final Set<String> registeredNos = profiles
-          .map((p) => normalizeCustomerNo(p['accurate_customer_id'].toString()))
-          .toSet();
+      final profiles = await supabase.from('profiles').select('accurate_customer_id').not('accurate_customer_id', 'is', null);
+      final Set<String> registeredNos = profiles.map((p) => normalizeCustomerNo(p['accurate_customer_id'].toString())).toSet();
       int currentPage = 1; bool hasMore = true;
       while (hasMore) {
         final customers = await getAccurateCustomersPaged(page: currentPage);
@@ -913,9 +897,9 @@ class AccurateService {
               final res = await supabase.auth.admin.inviteUserByEmail(email);
               if (res.user?.id != null) {
                 await supabase.from('profiles').upsert({
-                  'id': res.user!.id, 'email': email, 'full_name': name,
-                  'phone': phone, 'accurate_customer_id': customerNo,
-                  'approval_status': 'APPROVED', 'is_profile_completed': false, 'has_password': false,
+                  'id': res.user!.id, 'email': email, 'full_name': name, 'phone': phone,
+                  'accurate_customer_id': customerNo, 'approval_status': 'APPROVED',
+                  'is_profile_completed': false, 'has_password': false,
                 });
                 registeredNos.add(customerNo);
               }
@@ -929,33 +913,22 @@ class AccurateService {
   }
 
   Future<List<Map<String, dynamic>>> getAccurateCustomersPaged({required int page}) async {
-    final config = await _supabase.from('app_config').select().inFilter('key', [
-      'accurate_db_host', 'accurate_access_token', 'accurate_db_session',
-    ]);
+    final config = await _supabase.from('app_config').select().inFilter('key', ['accurate_db_host', 'accurate_access_token', 'accurate_db_session']);
     String? host, token, session;
     for (var row in config) {
       if (row['key'] == 'accurate_db_host') host = row['value'];
       if (row['key'] == 'accurate_access_token') token = row['value'];
       if (row['key'] == 'accurate_db_session') session = row['value'];
     }
-    final String urlStr =
-        '$host/accurate/api/customer/list.do?fields=id,customerNo,name,email,mobilePhone'
-        '&sp.pageSize=100&sp.page=$page';
-    final response = await _proxy(
-      accurateUrl: urlStr,
-      headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session!},
-    );
-    if (response['s'] == true && response['d'] != null) {
-      return List<Map<String, dynamic>>.from(response['d']);
-    }
+    final String urlStr = '$host/accurate/api/customer/list.do?fields=id,customerNo,name,email,mobilePhone&sp.pageSize=100&sp.page=$page';
+    final response = await _proxy(accurateUrl: urlStr, headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session!});
+    if (response['s'] == true && response['d'] != null) return List<Map<String, dynamic>>.from(response['d']);
     return [];
   }
 
   Future<Map<String, dynamic>?> getCustomerByCustomerNo(String customerNo) async {
     try {
-      final config = await _supabase.from('app_config').select().inFilter('key', [
-        'accurate_db_host', 'accurate_access_token', 'accurate_db_session',
-      ]);
+      final config = await _supabase.from('app_config').select().inFilter('key', ['accurate_db_host', 'accurate_access_token', 'accurate_db_session']);
       String? host, token, session;
       for (var row in config) {
         if (row['key'] == 'accurate_db_host') host = row['value'];
@@ -964,28 +937,17 @@ class AccurateService {
       }
       if (host == null || token == null || session == null) return null;
       final String normalized = normalizeCustomerNo(customerNo);
-      final String urlStr =
-          '$host/accurate/api/customer/list.do?fields=id,customerNo,name,email,mobilePhone'
-          '&keywords=${Uri.encodeComponent(normalized)}&sp.pageSize=20';
-      final response = await _proxy(
-        accurateUrl: urlStr,
-        headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session},
-      );
+      final String urlStr = '$host/accurate/api/customer/list.do?fields=id,customerNo,name,email,mobilePhone&keywords=${Uri.encodeComponent(normalized)}&sp.pageSize=20';
+      final response = await _proxy(accurateUrl: urlStr, headers: {'Authorization': 'Bearer $token', 'X-Session-ID': session});
       if (response['s'] == true && response['d'] != null) {
         final List data = response['d'];
         for (final item in data) {
-          if (normalizeCustomerNo(item['customerNo']?.toString() ?? '') == normalized) {
-            return Map<String, dynamic>.from(item);
-          }
+          if (normalizeCustomerNo(item['customerNo']?.toString() ?? '') == normalized) return Map<String, dynamic>.from(item);
         }
       }
       return null;
     } catch (e) { return null; }
   }
-
-  @Deprecated('Gunakan getCustomerByCustomerNo(customerNo)')
-  Future<Map<String, dynamic>?> getCustomerById(String customerNo) =>
-      getCustomerByCustomerNo(customerNo);
 }
 
 class SyncResult {
@@ -995,12 +957,5 @@ class SyncResult {
   final int totalUsersAffected;
   final int totalSkipped;
   final List<String> errors;
-  SyncResult({
-    required this.message,
-    required this.totalInvoicesChecked,
-    required this.totalPointsAdded,
-    required this.totalUsersAffected,
-    required this.totalSkipped,
-    this.errors = const [],
-  });
+  SyncResult({required this.message, required this.totalInvoicesChecked, required this.totalPointsAdded, required this.totalUsersAffected, required this.totalSkipped, this.errors = const []});
 }

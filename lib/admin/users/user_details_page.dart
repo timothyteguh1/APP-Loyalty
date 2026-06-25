@@ -105,7 +105,7 @@ class _UserDetailsPageState extends State<UserDetailsPage> {
           }
           
           // Deteksi Poin Manual (Bukan dari Faktur/Retur Accurate, Reset, atau Tukar Hadiah)
-          bool isAccurate = refId.startsWith('FP/') || refId.startsWith('SI/') || refId.startsWith('SR/') || refId.startsWith('BONUS_');
+          bool isAccurate = refId.startsWith('FP') || refId.startsWith('SI') || refId.startsWith('SR') || refId.startsWith('BONUS_');
           bool isReset = refId.startsWith('RESET_');
           bool isRedeem = refType == 'REDEEM' || refId.startsWith('RDM');
           
@@ -438,11 +438,23 @@ class _UserHistoryDialogState extends State<_UserHistoryDialog> {
     }
   }
 
+  // Mengambil poin MURNI (tanpa pengali bonus)
   int _basePoin(Map<String, dynamic> h) {
+    final type = h['reference_type']?.toString() ?? '';
+    final ref = h['reference_id']?.toString() ?? '';
+
+    // Reset dan Bonus Row tidak memiliki base poin
+    if (type.startsWith('RESET') || ref.startsWith('RESET')) return 0;
+    if (ref.startsWith('BONUS_')) return 0;
+
+    // Poin Manual dianggap sebagai base poin murni
+    if (type == 'MANUAL') return (h['amount'] as num?)?.toInt() ?? 0;
+
     final double nominal = (h['base_nominal'] as num?)?.toDouble() ?? 0;
     if (nominal <= 0) return (h['amount'] as num?)?.toInt() ?? 0;
+
     final int base = (nominal / widget.baseAmount).floor();
-    return h['reference_type'] == 'RETURN' ? -base : base;
+    return type == 'RETURN' ? -base : base;
   }
 
   bool _isResetEntry(Map<String, dynamic> h) {
@@ -455,12 +467,33 @@ class _UserHistoryDialogState extends State<_UserHistoryDialog> {
   Widget build(BuildContext context) {
     int totalDenganBonus = 0;
     int totalTanpaBonus = 0;
+    DateTime? latestDate;
+
+    // Kalkulasi Total Poin
     for (final h in _histories) {
       if (_isResetEntry(h)) continue;
+      
       totalDenganBonus += (h['amount'] as num?)?.toInt() ?? 0;
-      totalTanpaBonus += _basePoin(h);
+      
+      if (!h['reference_id'].toString().startsWith('BONUS_')) {
+        totalTanpaBonus += _basePoin(h);
+      }
+
+      if (latestDate == null && h['created_at'] != null && !h['reference_id'].toString().startsWith('BONUS_')) {
+        latestDate = DateTime.parse(h['created_at']).toLocal();
+      }
     }
+    
     final int bonusPoin = totalDenganBonus - totalTanpaBonus;
+
+    // Filter histori untuk ditampilkan (Sembunyikan baris BONUS_ mentah dari DB)
+    final displayHistories = _histories.where((h) {
+      if (h['reference_id'].toString().startsWith('BONUS_')) return false;
+      return true;
+    }).toList();
+
+    final bool showSyntheticBonus = _showBonus && bonusPoin != 0;
+    final int itemCount = displayHistories.length + (showSyntheticBonus ? 1 : 0);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -480,6 +513,7 @@ class _UserHistoryDialogState extends State<_UserHistoryDialog> {
               ],
             ),
 
+            // Ringkasan Poin
             Container(
               margin: const EdgeInsets.symmetric(vertical: 12),
               padding: const EdgeInsets.all(16),
@@ -490,7 +524,7 @@ class _UserHistoryDialogState extends State<_UserHistoryDialog> {
               ),
               child: Row(
                 children: [
-                  _summaryChip('Total Poin', '$totalDenganBonus', const Color(0xFFD32F2F)),
+                  _summaryChip('Total Poin', '${_showBonus ? totalDenganBonus : totalTanpaBonus}', const Color(0xFFD32F2F)),
                   const SizedBox(width: 12),
                   _summaryChip('Tanpa Bonus', '$totalTanpaBonus', const Color(0xFF555555)),
                   const SizedBox(width: 12),
@@ -499,6 +533,7 @@ class _UserHistoryDialogState extends State<_UserHistoryDialog> {
               ),
             ),
 
+            // Toggle Mode
             Row(
               children: [
                 const Text('Tampilan:', style: TextStyle(fontSize: 13, color: Colors.grey)),
@@ -514,23 +549,41 @@ class _UserHistoryDialogState extends State<_UserHistoryDialog> {
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : _histories.isEmpty
+                  : displayHistories.isEmpty && !showSyntheticBonus
                       ? const Center(child: Text('Belum ada histori poin.', style: TextStyle(color: Colors.grey)))
                       : ListView.builder(
-                          itemCount: _histories.length,
+                          itemCount: itemCount,
                           itemBuilder: (context, index) {
-                            final h = _histories[index];
+                            
+                            // 1. Render Baris Bonus Akumulasi (Jika mode Dengan Bonus aktif)
+                            if (showSyntheticBonus) {
+                              if (index == 0) {
+                                String dateStr = latestDate != null ? DateFormat('dd MMM yyyy, HH:mm').format(latestDate) : '';
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), shape: BoxShape.circle),
+                                    child: const Icon(Icons.add_rounded, color: Colors.green, size: 16),
+                                  ),
+                                  title: const Text('Akumulasi Bonus Tier', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                                  subtitle: Text(dateStr, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                  trailing: Text('${bonusPoin > 0 ? "+" : ""}$bonusPoin', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 16)),
+                                );
+                              }
+                              index--; // Geser index untuk list sisanya
+                            }
+
+                            final h = displayHistories[index];
                             final bool isReset = _isResetEntry(h);
 
+                            // 2. Render Baris Reset
                             if (isReset) {
                               return ListTile(
                                 contentPadding: EdgeInsets.zero,
                                 leading: Container(
                                   padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orange.withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                  ),
+                                  decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), shape: BoxShape.circle),
                                   child: const Icon(Icons.restart_alt_rounded, color: Colors.orange, size: 16),
                                 ),
                                 title: Text(h['description'] ?? '-', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.orange)),
@@ -542,53 +595,32 @@ class _UserHistoryDialogState extends State<_UserHistoryDialog> {
                               );
                             }
 
-                            final int displayAmount = _showBonus ? ((h['amount'] as num?)?.toInt() ?? 0) : _basePoin(h);
+                            // 3. Render Baris Faktur / Manual
+                            // SELALU TAMPILKAN BASE POIN SAJA SESUAI DESAIN BARU
+                            final int displayAmount = _basePoin(h); 
                             final bool isPos = displayAmount > 0;
-                            final Color color = isPos ? Colors.green : Colors.red;
+                            final Color color = displayAmount == 0 ? Colors.grey : (isPos ? Colors.green : Colors.red);
 
                             String dateStr = '';
                             if (h['created_at'] != null) {
                               dateStr = DateFormat('dd MMM yyyy, HH:mm').format(DateTime.parse(h['created_at']).toLocal());
                             }
 
-                            final int withBonus = (h['amount'] as num?)?.toInt() ?? 0;
-                            final int withoutBonus = _basePoin(h);
-                            final int bonus = withBonus - withoutBonus;
-
                             return ListTile(
                               contentPadding: EdgeInsets.zero,
                               leading: Container(
                                 padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: color.withOpacity(0.1),
-                                  shape: BoxShape.circle,
-                                ),
+                                decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
                                 child: Icon(
-                                  isPos ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                                  displayAmount == 0 ? Icons.remove_circle_outline : (isPos ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded),
                                   color: color,
                                   size: 16,
                                 ),
                               ),
-                              title: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(h['description'] ?? '-', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                                  ),
-                                ],
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(dateStr, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                  if (_showBonus && bonus != 0 && withoutBonus != 0)
-                                    Text(
-                                      'Base: ${withoutBonus}p  +  Bonus: ${bonus >= 0 ? "+" : ""}${bonus}p',
-                                      style: const TextStyle(fontSize: 11, color: Color(0xFF2196F3)),
-                                    ),
-                                ],
-                              ),
+                              title: Text(h['description'] ?? '-', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                              subtitle: Text(dateStr, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                               trailing: Text(
-                                '${isPos ? "+" : ""}$displayAmount',
+                                '${displayAmount == 0 ? "" : (isPos ? "+" : "")}$displayAmount',
                                 style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 16),
                               ),
                             );
@@ -605,10 +637,7 @@ class _UserHistoryDialogState extends State<_UserHistoryDialog> {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(10),
-        ),
+        decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
         child: Column(
           children: [
             Text(value, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: color)),
